@@ -177,3 +177,35 @@ pub fn dialog_tabs_index(ui: &mut Ui, labels: &[&str], tab: &mut u8) {
         *tab = i;
     }
 }
+
+/// A small arrow or "more" button of a gallery strip (the Equation tab's symbols), like the
+/// Styles gallery's: the icon on a rounded highlight under the pointer, greyed out and inert while
+/// `enabled` is false. `name` is its accessible name (already translated).
+pub fn gallery_arrow(ui: &mut Ui, icon: &str, enabled: bool, name: &str) -> Response {
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(16.0, 22.0), if enabled { Sense::click() } else { Sense::hover() });
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, name));
+    if enabled && resp.hovered() {
+        ui.painter().rect_filled(r, CornerRadius::same(3), t.hover);
+    }
+    let c = if enabled { t.icon } else { t.text_disabled };
+    icons::paint(ui.painter(), r.shrink2(vec2(1.0, 4.0)), icon, c, c);
+    resp
+}
+
+/// A row that shows or hides more options below it (Find's Search Options): a chevron pointing
+/// right while they are hidden and down while they show, then `label` (already translated).
+pub fn disclosure(ui: &mut Ui, label: &str, open: bool) -> Response {
+    let t = Tokens::get(ui.ctx());
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let galley = ui.painter().layout_no_wrap(label.to_string(), font, t.text);
+    let (r, resp) = ui.allocate_exact_size(vec2(galley.size().x + 26.0, ui.spacing().interact_size.y), Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, ui.is_enabled(), open, label));
+    if resp.hovered() {
+        ui.painter().rect_filled(r, CornerRadius::same(crate::theme::ROW_RADIUS), t.hover);
+    }
+    let chevron = Rect::from_center_size(pos2(r.min.x + 10.0, r.center().y), vec2(12.0, 12.0));
+    icons::paint(ui.painter(), chevron, if open { "chevronDown" } else { "chevronRight" }, t.icon, t.icon);
+    ui.painter().galley(pos2(r.min.x + 20.0, r.center().y - galley.size().y / 2.0), galley, t.text);
+    resp
+}

@@ -330,8 +330,7 @@ pub(super) fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.add_enabled(plain, egui::Checkbox::new(whole_word, tl!("Whole words")));
                 ui.checkbox(&mut extra.wildcards, tl!("Use wildcards"));
             });
-            let arrow = if extra.more { "▾" } else { "▸" };
-            if ui.selectable_label(extra.more, format!("{arrow} {}", tl!("Search Options"))).clicked() {
+            if crate::widgets::disclosure(ui, tl!("Search Options"), extra.more).clicked() {
                 extra.more = !extra.more;
             }
             if extra.more {

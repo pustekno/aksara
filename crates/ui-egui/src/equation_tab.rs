@@ -257,13 +257,13 @@ fn symbols(ui: &mut Ui, app: &mut WordApp) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing = vec2(0.0, 1.0);
         let page = per_row * rows;
-        if ui.add_enabled(start > 0, egui::Button::new("▲").min_size(vec2(16.0, 22.0))).clicked() {
+        if crate::widgets::gallery_arrow(ui, "chevronUp", start > 0, tl!("Previous Row")).clicked() {
             ui.data_mut(|d| d.insert_temp(start_id, start.saturating_sub(per_row)));
         }
-        if ui.add_enabled(start + page < all.len(), egui::Button::new("▼").min_size(vec2(16.0, 22.0))).clicked() {
+        if crate::widgets::gallery_arrow(ui, "chevronDown", start + page < all.len(), tl!("Next Row")).clicked() {
             ui.data_mut(|d| d.insert_temp(start_id, start + per_row));
         }
-        let resp = ui.add(egui::Button::new("…").min_size(vec2(16.0, 22.0))).on_hover_text(tl!("All symbol sets"));
+        let resp = crate::widgets::gallery_arrow(ui, "more", true, tl!("All symbol sets")).on_hover_text(tl!("All symbol sets"));
         egui::Popup::menu(&resp).show(|ui| {
             ui.set_width(420.0);
             ui.horizontal_wrapped(|ui| {
