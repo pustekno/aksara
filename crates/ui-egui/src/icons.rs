@@ -69,6 +69,13 @@ impl Pen<'_> {
     fn arrow_down(&self, x: f32, y: f32, c: Color32) {
         self.fill(&[(x - 2.5, y - 1.2), (x + 2.5, y - 1.2), (x, y + 1.5)], c);
     }
+    /// A chevron (⌄, or ⌃ with `up`) across most of the box. Its stroke scales with the box but
+    /// never drops below 1.1 pt, so it still reads at the 9–12 pt drop-down markers are drawn at.
+    fn chevron(&self, up: bool, c: Color32) {
+        let (outer, tip) = if up { (13.0, 6.5) } else { (6.5, 13.0) };
+        let pts: Vec<Pos2> = [(3.5, outer), (10.0, tip), (16.5, outer)].iter().map(|&(x, y)| self.pt(x, y)).collect();
+        self.p.add(Shape::line(pts, Stroke::new((2.6 * self.s()).clamp(1.1, 2.0), c)));
+    }
 }
 
 /// Paint icon `name` into `r`. `c` is the line colour; the accent comes from the theme.
@@ -1232,9 +1239,11 @@ pub fn paint(p: &Painter, r: Rect, name: &str, c: Color32, accent: Color32) {
             pen.line(&[(5.0, 5.0), (15.0, 15.0)]);
             pen.line(&[(15.0, 5.0), (5.0, 15.0)]);
         }
-        // A triangle filling most of its box: it is drawn at 9–12 pt beside combos and split
-        // buttons, where a smaller one shrank to a dot (#535).
-        "dropdown" => pen.fill(&[(3.0, 7.0), (17.0, 7.0), (10.0, 14.0)], c),
+        // A chevron filling most of its box: it is drawn at 9–12 pt beside combos and split
+        // buttons, where a smaller mark shrank to a dot (#535), so its stroke has a floor.
+        "dropdown" => pen.chevron(false, c),
+        // The same chevron pointing up: a drop-down whose list is open.
+        "dropup" => pen.chevron(true, c),
         "more" => {
             for x in [5.0, 10.0, 15.0] {
                 pen.fcircle(x, 10.0, 1.3, c);

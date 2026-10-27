@@ -269,14 +269,7 @@ fn symbol_cell(app: &mut WordApp, ui: &mut Ui, font: &str, c: char, selected: bo
 pub(super) fn symbol_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SymbolForm) -> bool {
     let t = Tokens::get(ui.ctx());
     ui.set_width(GRID_COLS as f32 * CELL + 24.0);
-    ui.horizontal(|ui| {
-        for (i, l) in ["Symbols", "Special Characters"].into_iter().enumerate() {
-            if ui.selectable_label(f.tab == i as u8, tl!(l)).clicked() {
-                f.tab = i as u8;
-            }
-        }
-    });
-    ui.separator();
+    crate::widgets::dialog_tabs_index(ui, &["Symbols", "Special Characters"], &mut f.tab);
     let mut insert: Option<(Value, String, String)> = None;
     if f.tab == 1 {
         if special_ui(app, ui, f, &mut insert, &t) {
@@ -313,7 +306,7 @@ pub(super) fn symbol_ui(app: &mut WordApp, ui: &mut Ui, f: &mut SymbolForm) -> b
             ui.label(tl!("Subset:"));
             let current = f.selected.and_then(subset_of).unwrap_or("");
             let mut chosen = None;
-            egui::ComboBox::from_id_salt("symbol_subset").selected_text(current).width(170.0).show_ui(ui, |ui| {
+            crate::widgets::dropdown("symbol_subset").selected_text(current).width(170.0).show_ui(ui, |ui| {
                 for (name, a, b) in SUBSETS {
                     let i = f.chars.partition_point(|c| (*c as u32) < *a);
                     if f.chars.get(i).is_some_and(|c| (*c as u32) <= *b) && ui.selectable_label(*name == current, *name).clicked() {

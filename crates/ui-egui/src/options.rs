@@ -167,6 +167,7 @@ pub fn page(app: &mut WordApp, ui: &mut Ui) {
         ui.add_space(20.0);
         ui.vertical(|ui| {
             ui.set_max_width(640.0);
+            crate::theme::roomy(ui);
             match current.as_str() {
                 "display" => display(app, ui),
                 "proofing" => proofing(app, ui),
@@ -189,6 +190,14 @@ fn section(ui: &mut Ui, title: &str) {
 
 fn note(ui: &mut Ui, text: &str) {
     ui.label(RichText::new(tl!(text)).small().weak());
+}
+
+/// Width of the label column before a setting's drop-down, so the drop-downs of a pane line up.
+const FIELD_LABEL_W: f32 = 150.0;
+
+/// The label before a setting's control (`text` already translated), in the pane's label column.
+fn field_label(ui: &mut Ui, text: &str) -> egui::Response {
+    crate::widgets::field_label(ui, text, FIELD_LABEL_W)
 }
 
 /// Change settings through `file.options` (the command agents use).
@@ -238,14 +247,14 @@ fn general(app: &mut WordApp, ui: &mut Ui) {
     ui.add_space(8.0);
     section(ui, "Personalize");
     egui::Grid::new("options_user").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
-        let user_label = ui.label(tl!("User name:"));
+        let user_label = field_label(ui, tl!("User name:"));
         let mut n = app.session.author.clone();
         let protected = wordcraft_engine::cmd::protect::enforced(&app.session.doc);
         if ui.add_enabled(!protected, egui::TextEdit::singleline(&mut n).desired_width(260.0)).labelled_by(user_label.id).changed() && !protected {
             app.session.author = n;
         }
         ui.end_row();
-        let initials_label = ui.label(tl!("Initials:"));
+        let initials_label = field_label(ui, tl!("Initials:"));
         let mut i = app.session.initials.clone();
         let hint = app.session.user_initials();
         if ui
@@ -541,7 +550,7 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
         let auto = app.session.prefs.units.is_none();
         let name = UNITS.iter().find(|(u, _)| *u == units).map_or("Inches", |(_, n)| n);
         let shown = if auto { format!("{} ({})", tl!("Automatic"), tl!(name)) } else { tl!(name).to_string() };
-        let combo = egui::ComboBox::from_id_salt("options_units").selected_text(shown).width(200.0).show_ui(ui, |ui| {
+        let combo = crate::widgets::dropdown("options_units").selected_text(shown).width(200.0).show_ui(ui, |ui| {
             if ui.selectable_label(auto, tl!("Automatic")).clicked() {
                 set(app, json!({"units": "auto"}));
             }
@@ -561,7 +570,7 @@ fn advanced(app: &mut WordApp, ui: &mut Ui) {
         let system_tag = if system.territory.is_empty() { system.language.clone() } else { format!("{}-{}", system.language, system.territory) };
         let automatic = crate::i18n::fmt(tl!("Automatic ({region})"), &[("region", system_tag.as_str())]);
         let shown = chosen.clone().unwrap_or_else(|| automatic.clone());
-        let combo = egui::ComboBox::from_id_salt("options_region").selected_text(shown).width(200.0).show_ui(ui, |ui| {
+        let combo = crate::widgets::dropdown("options_region").selected_text(shown).width(200.0).show_ui(ui, |ui| {
             if ui.selectable_label(chosen.is_none(), automatic.as_str()).clicked() {
                 set(app, json!({"region": "auto"}));
             }
@@ -651,8 +660,8 @@ fn agents(ui: &mut Ui) {
 fn theme_picker(app: &mut WordApp, ui: &mut Ui) {
     use crate::theme::Appearance;
     ui.horizontal(|ui| {
-        let label = ui.label(tl!("Interface theme:"));
-        let combo = egui::ComboBox::from_id_salt("interface_theme").selected_text(tl!(app.ui.theme.label())).width(220.0).show_ui(ui, |ui| {
+        let label = field_label(ui, tl!("Interface theme:"));
+        let combo = crate::widgets::dropdown("interface_theme").selected_text(tl!(app.ui.theme.label())).width(220.0).show_ui(ui, |ui| {
             for a in Appearance::ALL {
                 if ui.selectable_label(app.ui.theme == a, tl!(a.label())).clicked() {
                     let _ = app.run("ui.theme", json!({"value": a.code()}));
@@ -672,8 +681,8 @@ fn interface_size_picker(app: &mut WordApp, ui: &mut Ui) {
     let auto = crate::i18n::fmt(tl!("Auto ({percent}%)"), &[("percent", &InterfaceSize::AUTO.drawn_percent(native).to_string())]);
     let selected = size.percent().map_or_else(|| auto.clone(), |pct| format!("{pct}%"));
     ui.horizontal(|ui| {
-        let label = ui.label(tl!("Interface size:"));
-        let combo = egui::ComboBox::from_id_salt("interface_size").selected_text(selected).width(220.0).show_ui(ui, |ui| {
+        let label = field_label(ui, tl!("Interface size:"));
+        let combo = crate::widgets::dropdown("interface_size").selected_text(selected).width(220.0).show_ui(ui, |ui| {
             if ui.selectable_label(size.is_auto(), auto).clicked() {
                 let _ = app.run("ui.interfaceSize", json!({"value": "auto"}));
             }
@@ -699,8 +708,8 @@ fn interface_size_picker(app: &mut WordApp, ui: &mut Ui) {
 fn animations_picker(app: &mut WordApp, ui: &mut Ui) {
     use crate::theme::Animations;
     ui.horizontal(|ui| {
-        let label = ui.label(tl!("Animation effects:"));
-        let combo = egui::ComboBox::from_id_salt("animation_effects").selected_text(tl!(app.ui.animations.label())).width(220.0).show_ui(ui, |ui| {
+        let label = field_label(ui, tl!("Animation effects:"));
+        let combo = crate::widgets::dropdown("animation_effects").selected_text(tl!(app.ui.animations.label())).width(220.0).show_ui(ui, |ui| {
             for a in Animations::ALL {
                 if ui.selectable_label(app.ui.animations == a, tl!(a.label())).clicked() {
                     let _ = app.run("ui.animations", json!({"value": a.code()}));
@@ -729,8 +738,8 @@ fn language_picker(app: &mut WordApp, ui: &mut Ui) {
     let auto_label = crate::i18n::fmt(tl!("Automatic ({language})"), &[("language", system.name())]);
     let current = if app.ui.language == AUTO { auto_label.clone() } else { Lang::from_pref(&app.ui.language).name().to_string() };
     ui.horizontal(|ui| {
-        let label = ui.label(tl!("Interface language:"));
-        let combo = egui::ComboBox::from_id_salt("interface_language").selected_text(current).width(220.0).show_ui(ui, |ui| {
+        let label = field_label(ui, tl!("Interface language:"));
+        let combo = crate::widgets::dropdown("interface_language").selected_text(current).width(220.0).show_ui(ui, |ui| {
             if ui.selectable_label(app.ui.language == AUTO, auto_label.as_str()).clicked() {
                 let _ = app.run("ui.language", json!({"value": AUTO}));
             }
@@ -839,9 +848,9 @@ fn default_app_button(app: &mut WordApp, ui: &mut Ui) {
 fn numeral_picker(app: &mut WordApp, ui: &mut Ui) {
     use wordcraft_layout::NumeralMode;
     ui.horizontal(|ui| {
-        let label = ui.label(tl!("Numerals:"));
+        let label = field_label(ui, tl!("Numerals:"));
         let mut sel = app.session.view.numeral;
-        let combo = egui::ComboBox::from_id_salt("numerals").selected_text(tl!(sel.label())).width(220.0).show_ui(ui, |ui| {
+        let combo = crate::widgets::dropdown("numerals").selected_text(tl!(sel.label())).width(220.0).show_ui(ui, |ui| {
             for m in [NumeralMode::Arabic, NumeralMode::Hindi, NumeralMode::Context, NumeralMode::System] {
                 ui.selectable_value(&mut sel, m, tl!(m.label()));
             }

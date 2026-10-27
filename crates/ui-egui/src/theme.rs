@@ -754,10 +754,14 @@ pub fn apply(ctx: &egui::Context, appearance: Appearance) {
         s.spacing.button_padding = egui::vec2(8.0, 3.0);
         s.spacing.interact_size = egui::vec2(24.0, 22.0);
         s.spacing.menu_margin = egui::Margin::same(6);
+        // Dialogs, the Read Aloud player and the file browser: their content keeps clear of the
+        // frame instead of running into it (the title bar has its own margins, `window_close`).
+        s.spacing.window_margin = WINDOW_MARGIN;
         s.text_styles.insert(egui::TextStyle::Body, regular(12.5));
         s.text_styles.insert(egui::TextStyle::Button, regular(12.5));
         s.text_styles.insert(egui::TextStyle::Small, regular(10.5));
-        s.text_styles.insert(egui::TextStyle::Heading, semibold(17.0));
+        // Window titles: a dialog's name, not a page heading.
+        s.text_styles.insert(egui::TextStyle::Heading, semibold(14.0));
         s.interaction.tooltip_delay = 0.45;
     });
     ctx.options_mut(|o| {
@@ -777,40 +781,117 @@ pub fn apply_animations(ctx: &egui::Context, on: bool) {
     });
 }
 
+/// Corner radius of buttons, fields and drop-downs.
+pub const CONTROL_RADIUS: u8 = 5;
+
+/// Corner radius of a highlighted row in a list or menu.
+pub const ROW_RADIUS: u8 = 4;
+
+/// Space between a window's frame and its content.
+pub const WINDOW_MARGIN: egui::Margin = egui::Margin { left: 16, right: 16, top: 12, bottom: 14 };
+
 /// egui's visuals for one of our palettes.
 fn visuals(t: &Tokens) -> Visuals {
     let mut v = if t.dark { Visuals::dark() } else { Visuals::light() };
+    let r = CornerRadius::same(CONTROL_RADIUS);
     v.panel_fill = t.ribbon;
     v.window_fill = t.menu;
     v.extreme_bg_color = t.input;
     v.faint_bg_color = t.panel;
-    v.window_stroke = Stroke::new(1.0, t.border_strong);
-    v.window_corner_radius = CornerRadius::same(8);
-    v.menu_corner_radius = CornerRadius::same(6);
+    // A hairline frame: the soft shadow below carries the window's edge.
+    v.window_stroke = Stroke::new(1.0, t.border);
+    v.window_corner_radius = CornerRadius::same(10);
+    v.menu_corner_radius = CornerRadius::same(8);
     v.selection.bg_fill = t.selection;
     v.selection.stroke = Stroke::new(1.0, t.accent);
     v.hyperlink_color = t.accent_text;
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, t.border);
     v.widgets.noninteractive.fg_stroke = Stroke::new(1.0, t.text);
+    v.widgets.noninteractive.corner_radius = r;
     v.widgets.inactive.bg_fill = t.input;
     v.widgets.inactive.weak_bg_fill = t.input;
     v.widgets.inactive.bg_stroke = Stroke::new(1.0, t.input_border);
     v.widgets.inactive.fg_stroke = Stroke::new(1.0, t.text);
-    v.widgets.inactive.corner_radius = CornerRadius::same(4);
+    v.widgets.inactive.corner_radius = r;
+    v.widgets.inactive.expansion = 0.0;
+    // Under the pointer an outline gets darker, never lighter than at rest.
     v.widgets.hovered.bg_fill = t.hover;
     v.widgets.hovered.weak_bg_fill = t.hover;
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, t.border_strong);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, t.text_dim);
     v.widgets.hovered.fg_stroke = Stroke::new(1.0, t.text);
-    v.widgets.hovered.corner_radius = CornerRadius::same(4);
+    v.widgets.hovered.corner_radius = r;
+    v.widgets.hovered.expansion = 0.0;
     v.widgets.active.bg_fill = t.pressed;
     v.widgets.active.weak_bg_fill = t.pressed;
+    v.widgets.active.bg_stroke = Stroke::new(1.0, t.accent);
     v.widgets.active.fg_stroke = Stroke::new(1.0, t.text);
-    v.widgets.active.corner_radius = CornerRadius::same(4);
-    v.widgets.open.bg_fill = t.pressed;
-    v.widgets.open.weak_bg_fill = t.pressed;
-    v.popup_shadow = egui::Shadow { offset: [0, 4], blur: 16, spread: 0, color: Color32::from_black_alpha(if t.dark { 120 } else { 40 }) };
-    v.window_shadow = egui::Shadow { offset: [0, 8], blur: 28, spread: 0, color: Color32::from_black_alpha(if t.dark { 140 } else { 50 }) };
+    v.widgets.active.corner_radius = r;
+    v.widgets.active.expansion = 0.0;
+    // An open drop-down or menu button keeps the window's colour with an accent outline. egui
+    // also fills the title bar of the window in front with this colour, so dialogs get a clean
+    // title row rather than a grey band.
+    v.widgets.open.bg_fill = t.menu;
+    v.widgets.open.weak_bg_fill = t.menu;
+    v.widgets.open.bg_stroke = Stroke::new(1.0, t.accent);
+    v.widgets.open.fg_stroke = Stroke::new(1.0, t.text);
+    v.widgets.open.corner_radius = r;
+    v.widgets.open.expansion = 0.0;
+    v.popup_shadow = egui::Shadow { offset: [0, 6], blur: 20, spread: 0, color: Color32::from_black_alpha(if t.dark { 150 } else { 34 }) };
+    v.window_shadow = egui::Shadow { offset: [0, 14], blur: 40, spread: 0, color: Color32::from_black_alpha(if t.dark { 170 } else { 56 }) };
     v
+}
+
+/// The tokens of the palette `style` is drawn with (inside a style modifier, which has no context).
+pub fn tokens_of(style: &egui::Style) -> Tokens {
+    if style.visuals.dark_mode { Tokens::dark() } else { Tokens::light() }
+}
+
+/// Rows of a list or menu (a drop-down's choices): roomy, a rounded highlight under the pointer,
+/// no box around a row, and the chosen row tinted in the accent colour. For egui popups' style
+/// modifiers and for lists drawn inside a popup.
+pub fn list_rows(style: &mut egui::Style) {
+    let t = tokens_of(style);
+    style.spacing.button_padding = egui::vec2(10.0, 4.0);
+    style.spacing.item_spacing.y = 1.0;
+    style.spacing.menu_margin = egui::Margin::same(5);
+    let w = &mut style.visuals.widgets;
+    w.inactive.weak_bg_fill = Color32::TRANSPARENT;
+    w.hovered.weak_bg_fill = t.hover;
+    w.active.weak_bg_fill = t.pressed;
+    w.open.weak_bg_fill = t.hover;
+    for v in [&mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
+        v.bg_stroke = Stroke::NONE;
+        v.corner_radius = CornerRadius::same(ROW_RADIUS);
+        v.expansion = 0.0;
+        v.fg_stroke = Stroke::new(1.0, t.text);
+    }
+    style.visuals.selection.bg_fill = t.checked;
+    style.visuals.selection.stroke = Stroke::new(1.0, t.accent_text);
+}
+
+/// A drop-down field: the input colour in every state, its outline darker under the pointer
+/// and in the accent colour while it is pressed, focused or open.
+pub fn field_visuals(v: &mut Visuals, t: &Tokens) {
+    let w = &mut v.widgets;
+    for s in [&mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
+        s.bg_fill = t.input;
+        s.weak_bg_fill = t.input;
+        s.fg_stroke = Stroke::new(1.0, t.text);
+        s.corner_radius = CornerRadius::same(CONTROL_RADIUS);
+        s.expansion = 0.0;
+    }
+    w.inactive.bg_stroke = Stroke::new(1.0, t.input_border);
+    w.hovered.bg_stroke = Stroke::new(1.0, t.text_dim);
+    w.active.bg_stroke = Stroke::new(1.0, t.accent);
+    w.open.bg_stroke = Stroke::new(1.0, t.accent);
+}
+
+/// Dialog content: a little more room between and inside controls than the dense ribbon has.
+pub fn roomy(ui: &mut egui::Ui) {
+    let s = ui.spacing_mut();
+    s.item_spacing = egui::vec2(8.0, 5.0);
+    s.button_padding = egui::vec2(10.0, 4.0);
+    s.interact_size.y = 24.0;
 }
 
 pub fn c32(c: wordcraft_doc::Rgb) -> Color32 {

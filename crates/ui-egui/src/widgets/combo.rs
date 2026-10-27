@@ -156,8 +156,8 @@ pub fn font_matches(query: &str, items: &[String]) -> Vec<usize> {
     exact
 }
 
-/// Width of a combo arrow's border, the field's own (the theme's input border is 1 pt).
-const ARROW_BORDER: f32 = 1.0;
+/// Width of the arrow part at a combo's right end.
+const ARROW_W: f32 = 18.0;
 
 /// A searching combo's state between frames.
 #[derive(Clone, Default)]
@@ -204,14 +204,6 @@ fn combo_impl(
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-        // The field and its arrow share one outline: rounded on the outside, square where they
-        // meet. The field's frame takes the widget visuals' radius in every state.
-        let r = ui.visuals().widgets.inactive.corner_radius;
-        let w = &mut ui.visuals_mut().widgets;
-        for v in [&mut w.noninteractive, &mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
-            v.corner_radius.ne = 0;
-            v.corner_radius.se = 0;
-        }
         // Up/Down move the list's highlight: take them before the text field moves its cursor.
         let mut step = 0i32;
         if s.open && ui.memory(|m| m.has_focus(te_id)) {
@@ -224,9 +216,14 @@ fn combo_impl(
                 }
             });
         }
-        let te = egui::TextEdit::singleline(&mut text).id(te_id).desired_width(width - 16.0).font(regular(12.0)).margin(vec2(4.0, 3.0));
-        // The arrow's box is painted here, under the field, once its size is known.
-        let arrow_bg = ui.painter().add(egui::Shape::Noop);
+        // The field and its arrow are one box: the text field draws no frame of its own, and the
+        // box is painted here, under both, once their size and state are known.
+        let te = egui::TextEdit::singleline(&mut text)
+            .id(te_id)
+            .desired_width(width - ARROW_W)
+            .font(regular(12.0))
+            .frame(egui::Frame::NONE.inner_margin(egui::Margin { left: 6, right: 2, top: 3, bottom: 3 }));
+        let outline = ui.painter().add(egui::Shape::Noop);
         let resp = ui.add(te);
         // The field says what it is: without a name a screen reader has only "edit" to say
         // (#3172). The arrow says whose options it opens, as the split buttons' arrow does.
@@ -284,18 +281,27 @@ fn combo_impl(
         } else if enter {
             out = Some(text.clone());
         }
-        let (ar, aresp) = ui.allocate_exact_size(vec2(16.0, resp.rect.height()), Sense::click());
+        let (ar, aresp) = ui.allocate_exact_size(vec2(ARROW_W, resp.rect.height()), Sense::click());
         if !tip.is_empty() {
             let arrow_name = crate::i18n::fmt(tl!("{name} options"), &[("name", tip)]);
             aresp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), &arrow_name));
         }
-        // It reaches one border width under the field, so the field's right border is the only line
-        // between them: two borders side by side read as a double-width divider.
-        let ar_radius = CornerRadius { nw: 0, sw: 0, ne: r.ne, se: r.se };
-        let under = Rect::from_min_max(pos2(ar.min.x - ARROW_BORDER, ar.min.y), ar.max);
-        let fill = if aresp.hovered() { t.hover } else { t.input };
-        let arrow_box = egui::epaint::RectShape::new(under, ar_radius, fill, Stroke::new(ARROW_BORDER, t.input_border), egui::StrokeKind::Inside);
-        ui.painter().set(arrow_bg, arrow_box);
+        // One outline round the field and the arrow, no divider between them: darker under the
+        // pointer, the accent colour while the field is focused or a list is open.
+        let list_open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&aresp));
+        let stroke = if focused || s.open || list_open {
+            Stroke::new(1.0, t.accent)
+        } else if resp.hovered() || aresp.hovered() {
+            Stroke::new(1.0, t.text_dim)
+        } else {
+            Stroke::new(1.0, t.input_border)
+        };
+        let radius = CornerRadius::same(crate::theme::CONTROL_RADIUS);
+        let field_box = egui::epaint::RectShape::new(resp.rect.union(ar), radius, t.input, stroke, egui::StrokeKind::Inside);
+        ui.painter().set(outline, field_box);
+        if aresp.hovered() || list_open {
+            ui.painter().rect_filled(ar.shrink(2.0), CornerRadius::same(crate::theme::ROW_RADIUS - 1), t.hover);
+        }
         // Not while typing: the family list drops from the field's bottom edge and the hint would cover it.
         // A field only focused by Tab, with nothing typed, still gets its (delayed) keyboard hint.
         let typing = focused && text != current;
@@ -303,11 +309,13 @@ fn combo_impl(
             show_hint(&resp, tip, &[]);
             show_hint(&aresp, tip, &[]);
         }
-        icons::paint(ui.painter(), Rect::from_center_size(ar.center(), vec2(DROPDOWN, DROPDOWN)), "dropdown", t.icon, t.accent);
+        let chevron = if list_open { "dropup" } else { "dropdown" };
+        icons::paint(ui.painter(), Rect::from_center_size(ar.center(), vec2(DROPDOWN, DROPDOWN)), chevron, t.text_dim, t.text_dim);
         // The list drops from the box's left edge, as in Word, not from the arrow (#535).
         // The font list closes on a chosen entry or a click outside it, not on its headings.
         let close = if search { egui::PopupCloseBehavior::CloseOnClickOutside } else { egui::PopupCloseBehavior::CloseOnClick };
-        egui::Popup::menu(&aresp).anchor(resp.rect.union(ar)).close_behavior(close).show(|ui| {
+        let list = egui::Popup::menu(&aresp).anchor(resp.rect.union(ar)).close_behavior(close).style(crate::theme::list_rows);
+        list.show(|ui| {
             let item = |k: usize| items.get(k);
             let row = |k: usize| section_row(k, recent, &item);
             if let Some(v) = list_rows(ui, width, current, section_rows(recent.len(), items.len()), &row, None, None, preview).0 {
@@ -343,6 +351,7 @@ fn combo_impl(
             s.rows = n;
             let area = egui::Area::new(list_id).order(egui::Order::Tooltip).fixed_pos(resp.rect.left_bottom()).sizing_pass(resize);
             let shown = area.show(ui.ctx(), |ui| {
+                crate::theme::list_rows(ui.style_mut());
                 egui::Frame::popup(ui.style())
                     .show(ui, |ui| {
                         let item = |k: usize| matches.get(k).and_then(|&i| items.get(i));

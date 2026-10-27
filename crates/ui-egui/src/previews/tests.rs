@@ -26,7 +26,16 @@ fn font_menu_entries_leave_installed_families_unloaded() {
 
 /// A window whose Styles gallery lists `style` first: runs the gallery for a few frames and
 /// returns the painted shapes of the last one and every texture picture uploaded on the way.
-fn run_gallery(mut doc: Document, style: wordcraft_doc::styles::Style) -> (Vec<egui::epaint::ClippedShape>, Vec<egui::ColorImage>) {
+fn run_gallery(doc: Document, style: wordcraft_doc::styles::Style) -> (Vec<egui::epaint::ClippedShape>, Vec<egui::ColorImage>) {
+    run_gallery_in(doc, style, crate::theme::Appearance::Light)
+}
+
+/// [`run_gallery`] in the interface theme `appearance`.
+fn run_gallery_in(
+    mut doc: Document,
+    style: wordcraft_doc::styles::Style,
+    appearance: crate::theme::Appearance,
+) -> (Vec<egui::epaint::ClippedShape>, Vec<egui::ColorImage>) {
     // Only the style under test is in the gallery.
     for other in &mut doc.styles.styles {
         other.quick = false;
@@ -35,6 +44,7 @@ fn run_gallery(mut doc: Document, style: wordcraft_doc::styles::Style) -> (Vec<e
     let mut app = WordApp::new(wordcraft_engine::Session::new(doc), Default::default());
     app.ui.language = "en".into();
     let ctx = egui::Context::default();
+    crate::theme::apply(&ctx, appearance);
     let mut shapes = Vec::new();
     let mut images = Vec::new();
     for frame in 0..6 {
@@ -99,6 +109,19 @@ fn a_hanging_indent_style_previews_from_the_tile_edge() {
     // "AaBbCcDd" begins at the left margin (1 point) and is whole: it is about 60 points wide.
     assert!(first < 6, "the first line starts off the tile's left edge (ink from column {first})");
     assert!(last - first > 40, "the first line is cut off by the tile's left edge (ink {first}..{last})");
+}
+
+/// In the dark theme every Styles gallery tile carried a light grey card under its sample. The
+/// sample is now drawn as on a dark page whose paper is the gallery's own background: light
+/// letters straight on the dark tile.
+#[test]
+fn dark_theme_gallery_samples_sit_on_the_gallery_background() {
+    let (_, images) = run_gallery_in(Document::new(), gallery_style("Sample"), crate::theme::Appearance::Dark);
+    let preview = images.iter().find(|i| (200..300).contains(&i.size[0]) && (20..60).contains(&i.size[1])).expect("the preview is rendered");
+    let bg = crate::theme::Tokens::dark().input;
+    let corner = preview.pixels.first().copied().unwrap_or_default();
+    assert_eq!((corner.r(), corner.g(), corner.b()), (bg.r(), bg.g(), bg.b()), "the sample's paper is the gallery background");
+    assert!(preview.pixels.iter().any(|p| p.r() > 160), "the letters are light on the dark tile");
 }
 
 /// #663: gallery previews are dimmed in the dark theme, unless they show Switch Modes' dark

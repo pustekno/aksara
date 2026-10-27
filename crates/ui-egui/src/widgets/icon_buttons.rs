@@ -2,10 +2,20 @@ use super::buttons::DROPDOWN;
 use super::combo::drawn_state;
 use super::*;
 
-/// A dialog's primary button (OK, Save, Close): the accent fill with `on_accent` text, per theme.
+/// The least width of a dialog's OK, Cancel and Close buttons, so a short word still makes a
+/// button that is easy to hit and the pair lines up.
+pub const DIALOG_BUTTON_W: f32 = 76.0;
+
+/// A dialog's primary button (OK, Save, Close): the accent fill with `on_accent` text, per theme,
+/// without the field outline round it.
 pub fn primary_button(ui: &Ui, text: impl Into<String>) -> egui::Button<'static> {
     let t = Tokens::get(ui.ctx());
-    egui::Button::new(egui::RichText::new(text.into()).color(t.on_accent)).fill(t.accent)
+    egui::Button::new(egui::RichText::new(text.into()).color(t.on_accent)).fill(t.accent).stroke(Stroke::NONE).min_size(vec2(DIALOG_BUTTON_W, 0.0))
+}
+
+/// A dialog's other buttons (Cancel, Apply…): as wide as [`primary_button`] at least.
+pub fn secondary_button(text: impl Into<String>) -> egui::Button<'static> {
+    egui::Button::new(text.into()).min_size(vec2(DIALOG_BUTTON_W, 0.0))
 }
 
 /// A frameless 22 px icon button (pane close buttons): ribbon-style hover and press feedback.
@@ -105,44 +115,65 @@ pub fn icon_menu_item(ui: &mut Ui, icon: &str, text: &str, shortcut: &str, min_w
     resp
 }
 
-/// A strip of dialog tabs. The active tab joins the page below it.
+/// A strip of dialog tabs: the labels side by side over a hairline, the open tab's label in the
+/// accent colour with an accent bar under it, the others dimmer with a soft highlight under the
+/// pointer. Every tab is measured in the open tab's weight, so switching tabs moves nothing.
 /// Returns the index of the tab the user clicked.
 pub fn dialog_tabs(ui: &mut Ui, labels: &[String], selected: usize) -> Option<usize> {
-    const H: f32 = 26.0;
+    const H: f32 = 28.0;
+    /// Room on each side of a label.
+    const PAD: f32 = 12.0;
+    /// The least room on each side of a label: in a narrow pane the tabs move closer together
+    /// rather than run past its edge.
+    const MIN_PAD: f32 = 4.0;
     let t = Tokens::get(ui.ctx());
-    let page = ui.visuals().window_fill;
-    let need: f32 = labels.iter().map(|l| ui.painter().layout_no_wrap(l.clone(), regular(12.5), t.text).size().x + 27.0).sum::<f32>() + 1.0;
-    ui.set_min_width(need);
+    let text_w: Vec<f32> = labels.iter().map(|l| ui.painter().layout_no_wrap(l.clone(), crate::theme::medium(12.5), t.text).size().x).collect();
+    let texts: f32 = text_w.iter().sum();
+    let sides = 2.0 * labels.len().max(1) as f32;
+    let avail = ui.available_width();
+    let pad = if avail.is_finite() { ((avail - texts - 1.0) / sides).clamp(MIN_PAD, PAD) } else { PAD };
+    ui.set_min_width(texts + sides * pad + 1.0);
     let origin = ui.cursor().min;
     let width = ui.available_width();
     let base_y = origin.y + H;
-    let base = ui.painter().add(egui::Shape::Noop);
-    let top = CornerRadius { nw: 5, ne: 5, sw: 0, se: 0 };
+    // The hairline under the strip first, so the open tab's bar lies over it.
+    ui.painter().hline(origin.x..=origin.x + width, base_y - 0.5, Stroke::new(1.0, t.border));
     let mut x = origin.x;
     let mut clicked = None;
     for (i, label) in labels.iter().enumerate() {
         let on = i == selected;
-        let galley = ui.painter().layout_no_wrap(label.clone(), regular(12.5), t.text);
-        let w = galley.size().x + 28.0;
-        let r = Rect::from_min_max(pos2(x, origin.y + 2.0), pos2(x + w, base_y));
+        let w = text_w.get(i).copied().unwrap_or(0.0) + 2.0 * pad;
+        let r = Rect::from_min_max(pos2(x, origin.y), pos2(x + w, base_y));
         let resp = ui.interact(r, ui.scope_id().with(("dialog_tab", i)), Sense::click());
         resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label));
-        let hover = ui.ctx().animate_bool_responsive(resp.id.with("hover"), resp.hovered());
-        let fill = if on { page } else { page.lerp_to_gamma(t.border, 0.14 + 0.1 * hover) };
+        let hover = ui.ctx().animate_bool_responsive(resp.id.with("hover"), resp.hovered() && !on);
         let p = ui.painter();
-        let shown = if on { r } else { Rect::from_min_max(pos2(r.min.x, r.min.y + 2.0), r.max) };
-        p.rect(shown, top, fill, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
-        if on {
-            p.rect_filled(Rect::from_min_max(pos2(r.min.x + 1.0, base_y - 1.0), pos2(r.max.x - 1.0, base_y + 1.0)), 0.0, page);
+        if hover > 0.0 {
+            let fill = Color32::TRANSPARENT.lerp_to_gamma(t.hover, hover);
+            p.rect_filled(r.shrink2(vec2(2.0, 3.0)), CornerRadius::same(crate::theme::ROW_RADIUS), fill);
         }
-        let color = if on { t.text } else { t.text.gamma_multiply(0.8) };
-        p.galley(pos2(r.center().x - galley.size().x / 2.0, r.center().y - galley.size().y / 2.0), galley, color);
+        let (font, color) = if on { (crate::theme::medium(12.5), t.accent_text) } else { (regular(12.5), t.text_dim) };
+        let galley = p.layout_no_wrap(label.clone(), font, color);
+        p.galley(pos2(r.center().x - galley.size().x / 2.0, r.center().y - galley.size().y / 2.0 - 1.0), galley, color);
+        if on {
+            let bar = Rect::from_min_max(pos2(r.min.x + pad - 2.0, base_y - 2.5), pos2(r.max.x - pad + 2.0, base_y + 0.5));
+            p.rect_filled(bar, CornerRadius::same(2), t.accent);
+        }
         if resp.clicked() && !on {
             clicked = Some(i);
         }
-        x += w - 1.0;
+        x += w;
     }
     ui.allocate_space(vec2(width, H + 1.0));
-    ui.painter().set(base, egui::Shape::line_segment([pos2(origin.x, base_y), pos2(origin.x + width, base_y)], Stroke::new(1.0, t.border)));
     clicked
+}
+
+/// [`dialog_tabs`] for English `labels` (translated here) whose open tab is the index `tab`.
+pub fn dialog_tabs_index(ui: &mut Ui, labels: &[&str], tab: &mut u8) {
+    let shown: Vec<String> = labels.iter().map(|l| tl!(l).to_string()).collect();
+    if let Some(i) = dialog_tabs(ui, &shown, usize::from(*tab))
+        && let Ok(i) = u8::try_from(i)
+    {
+        *tab = i;
+    }
 }

@@ -452,55 +452,44 @@ fn font_list_sections_skip_their_headings() {
     assert_eq!(highlight_row(1, 0), 1);
 }
 
-/// The field was rounded on all four corners and the arrow on none, so the two looked apart,
-/// and their borders stood side by side as a double-width divider. The field is rounded only
-/// on the left, the arrow only on the right, and the arrow's box lies under the field by one
-/// border width, so a single line divides them; focused or not.
+/// The field and its arrow are one control: a single outline round both, rounded at all four
+/// corners, with no divider between them (the arrow used to sit in a box of its own, like an old
+/// combo box). Focused, the outline takes the accent colour; at rest, the input border.
 #[test]
-fn combo_field_and_arrow_share_one_outline() {
+fn combo_field_and_arrow_are_one_rounded_box() {
     let sizes: Vec<String> = ["10", "11", "12"].map(String::from).to_vec();
-    let ctx = egui::Context::default();
     let cases = [crate::theme::Appearance::Light, crate::theme::Appearance::Dark].into_iter().flat_map(|a| [(a, false), (a, true)]);
     for (appearance, focused) in cases {
+        let ctx = egui::Context::default();
         crate::theme::apply(&ctx, appearance);
-        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            if focused {
-                ui.memory_mut(|m| m.request_focus(ui.scope_id().with(("combo_edit", "f"))));
-            }
-            combo(ui, "f", 150.0, "12", &sizes, None);
-        });
-        // Painted boxes in paint order: (order, rect, corners, border width).
-        let boxes: Vec<(usize, Rect, CornerRadius, f32)> = std::mem::take(&mut out.shapes)
+        let mut tokens = None;
+        let mut frame = || {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                if focused {
+                    ui.memory_mut(|m| m.request_focus(ui.scope_id().with(("combo_edit", "f"))));
+                }
+                tokens = Some(Tokens::get(ui.ctx()));
+                combo(ui, "f", 150.0, "12", &sizes, None);
+            })
+        };
+        frame().drop_without_applying_deltas();
+        let mut out = frame();
+        // Outlined boxes painted: (rect, corners, outline).
+        let boxes: Vec<(Rect, CornerRadius, Stroke)> = std::mem::take(&mut out.shapes)
             .into_iter()
             .filter_map(|c| match c.shape {
-                egui::Shape::Rect(r) => Some((r.rect, r.corner_radius, r.stroke.width)),
+                egui::Shape::Rect(r) if r.stroke.width > 0.0 && r.stroke.color != Color32::TRANSPARENT => Some((r.rect, r.corner_radius, r.stroke)),
                 _ => None,
             })
-            .enumerate()
-            .map(|(i, (rect, c, w))| (i, rect, c, w))
             .collect();
         out.drop_without_applying_deltas();
-        let corners: Vec<CornerRadius> = boxes.iter().map(|b| b.2).collect();
-        let field = boxes.iter().find(|b| b.2.nw > 0 && b.2.sw == b.2.nw && b.2.ne == 0 && b.2.se == 0);
-        let field = field.unwrap_or_else(|| panic!("focused {focused}: no field rounded on the left only in {corners:?}"));
-        let arrow_corners = CornerRadius { nw: 0, sw: 0, ne: field.2.nw, se: field.2.sw };
-        let arrow = boxes.iter().find(|b| b.2 == arrow_corners);
-        let arrow = arrow.unwrap_or_else(|| panic!("focused {focused}: no arrow rounded on the right only in {corners:?}"));
-        assert!(!corners.iter().any(|c| c.nw > 0 && c.ne > 0), "focused {focused}: a part is still rounded all round: {corners:?}");
-        // One divider as wide as the other borders: the arrow's left border lies exactly under
-        // the field's right border, and the field is painted over it.
-        assert!(field.3 > 0.0 && arrow.3 == field.3, "focused {focused}: borders {} and {} differ", field.3, arrow.3);
-        assert!(
-            (arrow.1.min.x - (field.1.max.x - field.3)).abs() < 0.01,
-            "focused {focused}: arrow {:?} and field {:?} borders stand apart",
-            arrow.1,
-            field.1
-        );
-        assert!(arrow.0 < field.0, "focused {focused}: the arrow's box must be painted under the field");
-        assert!(
-            (arrow.1.min.y - field.1.min.y).abs() < 0.01 && (arrow.1.max.y - field.1.max.y).abs() < 0.01,
-            "focused {focused}: the outlines' tops and bottoms differ"
-        );
+        let t = tokens.unwrap_or_else(Tokens::light);
+        assert_eq!(boxes.len(), 1, "{appearance:?} focused {focused}: one outlined box, not {boxes:?}");
+        let (rect, corners, stroke) = boxes[0];
+        assert_eq!(corners, CornerRadius::same(crate::theme::CONTROL_RADIUS), "{appearance:?} focused {focused}: corners {corners:?}");
+        assert!((rect.width() - 150.0).abs() < 0.5, "{appearance:?} focused {focused}: the box spans field and arrow: {rect:?}");
+        let want = if focused { t.accent } else { t.input_border };
+        assert_eq!(stroke.color, want, "{appearance:?} focused {focused}: outline colour");
     }
 }
 

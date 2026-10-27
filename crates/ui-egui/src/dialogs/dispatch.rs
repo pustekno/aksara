@@ -213,7 +213,7 @@ pub(super) fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                         } else {
                             ALIGNS.iter().find(|(v, _)| v == align).map_or(align.as_str(), |(_, l)| tl!(l))
                         };
-                        let combo = egui::ComboBox::from_id_salt("para_align").selected_text(shown).show_ui(ui, |ui| {
+                        let combo = crate::widgets::dropdown("para_align").selected_text(shown).show_ui(ui, |ui| {
                             for (v, l) in ALIGNS {
                                 if ui.selectable_value(align, v.to_string(), tl!(l)).clicked() {
                                     mixed.remove("align");
@@ -301,9 +301,11 @@ pub(super) fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 return goto_body(app, ui, goto_what, goto_target, message);
             }
             let replace_mode = *tab == FindTab::Replace;
+            // One label column, so Find what and Replace with line up.
+            let label_w = crate::widgets::label_column(ui, &[tl!("Find what:"), tl!("Replace with:")]) + 4.0;
             ui.horizontal(|ui| {
-                let find_label = ui.label(tl!("Find what:"));
-                let r = ui.add(egui::TextEdit::singleline(query).id(egui::Id::unique("find_what")).desired_width(240.0)).labelled_by(find_label.id);
+                let find_label = crate::widgets::field_label(ui, tl!("Find what:"), label_w);
+                let r = ui.add(egui::TextEdit::singleline(query).id(egui::Id::unique("find_what")).desired_width(250.0)).labelled_by(find_label.id);
                 if std::mem::take(focus) {
                     r.request_focus();
                 }
@@ -313,8 +315,8 @@ pub(super) fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
             });
             if replace_mode {
                 ui.horizontal(|ui| {
-                    let replace_label = ui.label(tl!("Replace with:"));
-                    if ui.add(egui::TextEdit::singleline(replace).desired_width(228.0)).labelled_by(replace_label.id).gained_focus() {
+                    let replace_label = crate::widgets::field_label(ui, tl!("Replace with:"), label_w);
+                    if ui.add(egui::TextEdit::singleline(replace).desired_width(250.0)).labelled_by(replace_label.id).gained_focus() {
                         extra.to_replace = true;
                     }
                 });
@@ -767,7 +769,7 @@ pub(super) fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 ui.end_row();
                 let align_label = ui.label(tl!("Alignment:"));
                 let shown = ALIGNS.iter().find(|(k, _)| k == align).map_or("Center", |(_, l)| l);
-                let combo = egui::ComboBox::from_id_salt("phonetic_align").selected_text(tl!(shown)).show_ui(ui, |ui| {
+                let combo = crate::widgets::dropdown("phonetic_align").selected_text(tl!(shown)).show_ui(ui, |ui| {
                     for (k, l) in ALIGNS {
                         ui.selectable_value(align, k.to_string(), tl!(l));
                     }
@@ -1304,7 +1306,7 @@ pub(super) fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                 if fields.is_empty() {
                     ui.text_edit_singleline(field);
                 } else {
-                    egui::ComboBox::from_id_salt("merge_rule_field").selected_text(field.as_str()).width(200.0).show_ui(ui, |ui| {
+                    crate::widgets::dropdown("merge_rule_field").selected_text(field.as_str()).width(200.0).show_ui(ui, |ui| {
                         for f in fields.iter() {
                             ui.selectable_value(field, f.clone(), f);
                         }

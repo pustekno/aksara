@@ -136,6 +136,7 @@ pub fn show(app: &mut WordApp, ctx: &egui::Context) {
     let window = crate::window_close::window(ctx, egui::Window::new(tl!(title)).id(id).collapsible(false).resizable(false));
     let shown = place_dialog(ctx, id, window).show(ctx, |ui| {
         ui.set_min_width(340.0);
+        crate::theme::roomy(ui);
         close = body(app, ui, &mut d);
     });
     if let Some(shown) = &shown {
@@ -175,9 +176,9 @@ pub(crate) fn cancel_key_pressed(ui: &Ui) -> bool {
 pub(crate) fn ok_cancel_responses(ui: &mut Ui, draw_ok: impl FnOnce(&mut Ui) -> egui::Response, cancel: &str) -> (egui::Response, egui::Response) {
     if cfg!(target_os = "macos") {
         let okb = draw_ok(ui);
-        (okb, ui.button(cancel))
+        (okb, ui.add(crate::widgets::secondary_button(cancel)))
     } else {
-        let cancelb = ui.button(cancel);
+        let cancelb = ui.add(crate::widgets::secondary_button(cancel));
         (draw_ok(ui), cancelb)
     }
 }

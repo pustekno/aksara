@@ -248,7 +248,7 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
                                     }
                                     // Alignment, picked in place.
                                     let mut a = t.align;
-                                    egui::ComboBox::from_id_salt("tab_align")
+                                    crate::widgets::dropdown("tab_align")
                                         .width(86.0)
                                         .selected_text(tl!(crate::ruler_tabs::kind_label(a)))
                                         .show_ui(ui, |ui| {
@@ -269,7 +269,7 @@ pub fn tabs(app: &mut WordApp, ui: &mut Ui, f: &mut TabsForm) -> bool {
                                         .find(|(v, _, _)| *v == l)
                                         .map(|(_, _, fill)| if fill.is_empty() { tl!("None").to_string() } else { (*fill).to_string() })
                                         .unwrap_or_default();
-                                    egui::ComboBox::from_id_salt("tab_leader")
+                                    crate::widgets::dropdown("tab_leader")
                                         .width(64.0)
                                         .selected_text(shown)
                                         .show_ui(ui, |ui| {
@@ -552,14 +552,7 @@ impl BordersForm {
 
 /// The Borders and Shading dialog body. Returns true to close.
 pub fn borders(app: &mut WordApp, ui: &mut Ui, f: &mut BordersForm) -> bool {
-    ui.horizontal(|ui| {
-        for (i, l) in ["Borders", "Page Border", "Shading"].into_iter().enumerate() {
-            if ui.selectable_label(f.tab == i as u8, tl!(l)).clicked() {
-                f.tab = i as u8;
-            }
-        }
-    });
-    ui.separator();
+    crate::widgets::dialog_tabs_index(ui, &["Borders", "Page Border", "Shading"], &mut f.tab);
     let theme = app.session.doc.settings.theme_colors.clone();
     match f.tab {
         0 => {
@@ -632,7 +625,7 @@ fn lines(ui: &mut Ui, id: &str, l: &mut LineForm, theme: &[Rgb], fill: Option<Rg
         ui.vertical(|ui| {
             ui.label(tl!("Style:"));
             let current = STYLES.iter().find(|(s, _)| *s == l.style).map(|(_, n)| *n).unwrap_or("Single");
-            egui::ComboBox::from_id_salt((id, "style")).selected_text(tl!(current)).width(120.0).show_ui(ui, |ui| {
+            crate::widgets::dropdown((id, "style")).selected_text(tl!(current)).width(120.0).show_ui(ui, |ui| {
                 for (s, n) in STYLES {
                     ui.selectable_value(&mut l.style, s, tl!(n));
                 }
@@ -640,7 +633,7 @@ fn lines(ui: &mut Ui, id: &str, l: &mut LineForm, theme: &[Rgb], fill: Option<Rg
             ui.label(tl!("Color:"));
             color_menu(ui, theme, &mut l.color);
             ui.label(tl!("Width:"));
-            egui::ComboBox::from_id_salt((id, "width"))
+            crate::widgets::dropdown((id, "width"))
                 .selected_text(crate::i18n::fmt(tl!("{n} pt"), &[("n", &l.width.to_string())]))
                 .width(120.0)
                 .show_ui(ui, |ui| {

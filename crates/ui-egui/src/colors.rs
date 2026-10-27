@@ -488,14 +488,12 @@ fn body(ui: &mut Ui, d: &mut ColorsDialog) -> Option<bool> {
     ui.set_width(430.0);
     ui.label(egui::RichText::new(tl!("Colors")).font(crate::theme::semibold(14.0)));
     ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        for (tab, label) in [(ColorsTab::Standard, "Standard"), (ColorsTab::Custom, "Custom")] {
-            if ui.selectable_label(d.tab == tab, tl!(label)).clicked() {
-                d.tab = tab;
-            }
-        }
-    });
-    ui.separator();
+    let tabs = [ColorsTab::Standard, ColorsTab::Custom];
+    let labels = [tl!("Standard").to_string(), tl!("Custom").to_string()];
+    let open = tabs.iter().position(|tab| d.tab == *tab).unwrap_or(0);
+    if let Some(tab) = crate::widgets::dialog_tabs(ui, &labels, open).and_then(|i| tabs.get(i)) {
+        d.tab = *tab;
+    }
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.set_width(330.0);
@@ -672,7 +670,7 @@ fn custom(ui: &mut Ui, d: &mut ColorsDialog) {
     ui.add_space(8.0);
     egui::Grid::new("colors_custom").num_columns(2).spacing(vec2(10.0, 5.0)).show(ui, |ui| {
         ui.label(tl!("Color model:"));
-        egui::ComboBox::from_id_salt("colors_model")
+        crate::widgets::dropdown("colors_model")
             .selected_text(match d.model {
                 Model::Rgb => "RGB",
                 Model::Hsl => "HSL",

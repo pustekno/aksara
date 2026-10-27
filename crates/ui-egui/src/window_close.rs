@@ -11,6 +11,9 @@ use crate::theme::Tokens;
 const WIDTH: f32 = 1.6;
 /// Half the ✕'s width and height.
 const GLYPH: f32 = 5.0;
+/// Space above and below a window's title, inside the frame line: the title row is set apart
+/// from the content (a rule under it) rather than by a grey band.
+const TITLE_PAD: i8 = 9;
 
 /// The title bar's measurements for the current style.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -24,18 +27,17 @@ pub(crate) struct Geometry {
 pub(crate) fn geometry(ctx: &egui::Context) -> Geometry {
     let style = ctx.global_style();
     let heading = ctx.fonts_mut(|f| f.row_height(&TextStyle::Heading.resolve(&style)));
-    let m = style.spacing.window_margin;
-    let title_h = heading + f32::from(m.top) + f32::from(m.bottom);
+    let title_h = heading + 2.0 * f32::from(TITLE_PAD);
     Geometry { title_h, width: (WIDTH * title_h).round().clamp(0.0, 127.0) }
 }
 
-/// Reserves the box's room at the right end of `w`'s title bar. Pair with [`show`] after
-/// `Window::show`; the window must not use egui's own close button (`Window::open`).
+/// Reserves the box's room at the right end of `w`'s title bar, and as much at its left end so
+/// the title sits in the middle of the window. Pair with [`show`] after `Window::show`; the
+/// window must not use egui's own close button (`Window::open`).
 pub(crate) fn window<'a>(ctx: &egui::Context, w: egui::Window<'a>) -> egui::Window<'a> {
     let style = ctx.global_style();
-    let m = style.spacing.window_margin;
-    let right = geometry(ctx).width as i8;
-    w.title_frame(egui::Frame::window(&style).inner_margin(Margin { right, ..m }))
+    let side = geometry(ctx).width as i8;
+    w.title_frame(egui::Frame::window(&style).inner_margin(Margin { left: side, right: side, top: TITLE_PAD, bottom: TITLE_PAD }))
 }
 
 /// The box for a window whose outer rect is `window` (frame line included), with a title bar
@@ -62,6 +64,9 @@ pub(crate) fn show(ctx: &egui::Context, window: &Response, t: &Tokens) -> bool {
     let down = r.is_pointer_button_down_on() && r.contains_pointer();
     let hot = down || r.hovered();
     let painter = ctx.layer_painter(window.layer_id);
+    // The rule between the title row and the content, inside the frame line.
+    let inner = window.rect.shrink(stroke);
+    painter.hline(inner.x_range(), painter.round_to_pixel_center(rect.bottom()), Stroke::new(1.0, t.border));
     if hot {
         let ne = style.visuals.window_corner_radius.ne.saturating_sub(stroke.round() as u8);
         painter.rect_filled(rect, CornerRadius { ne, ..CornerRadius::ZERO }, if down { t.close_pressed } else { t.close_hover });
@@ -116,7 +121,7 @@ mod tests {
         assert_eq!(r, Rect::from_min_max(pos2(351.0, 51.0), pos2(399.0, 81.0)));
     }
 
-    /// With the app's style, the box is the heading row plus the window margin tall and about
+    /// With the app's style, the box is the heading row plus the title's padding tall and about
     /// 1.6× as wide, a whole number of points.
     #[test]
     fn geometry_follows_the_style() {
@@ -125,12 +130,11 @@ mod tests {
         crate::theme::apply(&ctx, crate::theme::Appearance::Light);
         ctx.begin_pass(Default::default());
         let g = geometry(&ctx);
-        let m = ctx.global_style().spacing.window_margin;
         let font = TextStyle::Heading.resolve(&ctx.global_style());
         let heading = ctx.fonts_mut(|f| f.row_height(&font));
         ctx.end_pass().drop_without_applying_deltas();
         assert!(heading > 12.0, "a heading row: {heading}");
-        assert_eq!(g.title_h, heading + f32::from(m.top) + f32::from(m.bottom));
+        assert_eq!(g.title_h, heading + 2.0 * f32::from(TITLE_PAD));
         assert_eq!(g.width, g.width.round());
         assert!((g.width / g.title_h - WIDTH).abs() < 0.05, "{g:?}");
     }

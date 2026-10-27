@@ -383,14 +383,7 @@ fn list_change(app: &mut WordApp, f: &mut AutoCorrectForm, params: Value) -> boo
 }
 
 fn autocorrect_ui(app: &mut WordApp, ui: &mut Ui, f: &mut AutoCorrectForm) -> bool {
-    ui.horizontal(|ui| {
-        for (i, l) in ["AutoCorrect", "AutoFormat As You Type", "Math AutoCorrect"].into_iter().enumerate() {
-            if ui.selectable_label(f.tab == i as u8, tl!(l)).clicked() {
-                f.tab = i as u8;
-            }
-        }
-    });
-    ui.separator();
+    crate::widgets::dialog_tabs_index(ui, &["AutoCorrect", "AutoFormat As You Type", "Math AutoCorrect"], &mut f.tab);
     match f.tab {
         0 => autocorrect_tab(app, ui, f),
         1 => {
@@ -646,12 +639,11 @@ fn setup_ui(app: &mut WordApp, ui: &mut Ui, st: &mut RestrictPane) {
     let editing = ui.checkbox(&mut st.editing, tl!("Only allow this kind of editing:"));
     ui.add_enabled_ui(st.editing, |ui| {
         let current = EDIT_MODES.get(st.mode).map(|m| m.1).unwrap_or("");
-        let combo =
-            egui::ComboBox::from_id_salt("restrict_mode").selected_text(tl!(current)).width(ui.available_width().min(220.0)).show_ui(ui, |ui| {
-                for (i, (_, label)) in EDIT_MODES.iter().enumerate() {
-                    ui.selectable_value(&mut st.mode, i, tl!(label));
-                }
-            });
+        let combo = crate::widgets::dropdown("restrict_mode").selected_text(tl!(current)).width(ui.available_width().min(220.0)).show_ui(ui, |ui| {
+            for (i, (_, label)) in EDIT_MODES.iter().enumerate() {
+                ui.selectable_value(&mut st.mode, i, tl!(label));
+            }
+        });
         combo.response.labelled_by(editing.id);
     });
     let mode = EDIT_MODES.get(st.mode).map(|m| m.0).unwrap_or("readOnly");

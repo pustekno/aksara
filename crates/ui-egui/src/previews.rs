@@ -415,12 +415,13 @@ pub fn font_entry_image(name: &str, ppp: f32) -> egui::ColorImage {
 
 /// Lay out `para` (with `base`'s styles) in a `w`×`h` pt box and rasterise it.
 pub fn snippet(base: &Document, para: Paragraph, w: f32, h: f32, ppp: f32, margin: f32) -> Option<egui::ColorImage> {
-    snippet_blocks(base, vec![Block::Para(para)], w, h, ppp, margin, None, false)
+    snippet_blocks(base, vec![Block::Para(para)], w, h, ppp, margin, None, None)
 }
 
-/// [`snippet`] on the dark page of View › Switch Modes when `dark` (the Styles gallery, #663).
-pub fn style_snippet(base: &Document, para: Paragraph, w: f32, h: f32, ppp: f32, margin: f32, dark: bool) -> Option<egui::ColorImage> {
-    snippet_blocks(base, vec![Block::Para(para)], w, h, ppp, margin, None, dark)
+/// [`snippet`] for the Styles gallery: drawn as on a dark page whose paper is the grey
+/// `dark_paper` when given (View › Switch Modes, or the dark theme, #663).
+pub fn style_snippet(base: &Document, para: Paragraph, w: f32, h: f32, ppp: f32, margin: f32, dark_paper: Option<u8>) -> Option<egui::ColorImage> {
+    snippet_blocks(base, vec![Block::Para(para)], w, h, ppp, margin, None, dark_paper)
 }
 
 /// How a gallery draws a page preview: as rendered on a light interface or on Switch Modes' dark
@@ -437,7 +438,7 @@ fn snippet_blocks(
     ppp: f32,
     margin: f32,
     paper: Option<wordcraft_doc::Rgb>,
-    dark: bool,
+    dark_paper: Option<u8>,
 ) -> Option<egui::ColorImage> {
     let mut d = Document::new();
     d.styles = base.styles.clone();
@@ -455,7 +456,10 @@ fn snippet_blocks(
     if let Some(p) = paper {
         opts.paper = p;
     }
-    opts.dark = dark;
+    if let Some(grey) = dark_paper {
+        opts.dark = true;
+        opts.dark_paper = grey;
+    }
     let img = wordcraft_render::render_area(&d, page, 0.0, 0.0, w + 2.0 * margin, h + margin, ppp, &opts);
     let px = img.to_straight();
     Some(egui::ColorImage::from_rgba_unmultiplied([img.width as usize, img.height as usize], &px))
@@ -500,7 +504,7 @@ pub fn style_preview(app: &mut WordApp, ui: &mut Ui, id: &str, ty: &str, size: e
                 Block::Para(p)
             }
         };
-        snippet_blocks(doc, vec![block], w, h, ppp, 4.0, None, false)
+        snippet_blocks(doc, vec![block], w, h, ppp, 4.0, None, None)
     });
     if let Some(hd) = tex {
         let sz = hd.size_vec2() / ppp;
@@ -528,20 +532,26 @@ pub fn style_gallery(app: &mut WordApp, ui: &mut Ui, state: &Value) {
     let visible = if crate::ribbon_fit::compact(ui.ctx()) { STYLE_TILES_COMPACT } else { STYLE_TILES };
     crate::ribbon_fit::add_saving(ui.ctx(), (STYLE_TILES - STYLE_TILES_COMPACT) as f32 * 76.0);
     let (area, _) = ui.allocate_exact_size(vec2(visible as f32 * 76.0 + 18.0, crate::widgets::CONTENT_H), Sense::hover());
-    ui.painter().rect(area.shrink(1.0), 4.0, t.input, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+    // The samples are drawn on the gallery's own background: on Switch Modes' dark page, and in
+    // the dark theme, as on a dark page whose paper is that background, so no light card sits in
+    // every tile (#663 dimmed a white one). The tile under the pointer and the current style are
+    // outlined rather than filled, so a sample never shows as a box inside its tile.
+    let dark_page = app.session.view.dark_mode;
+    let dark_paper = if t.dark { Some(t.input.r()) } else { dark_page.then_some(wordcraft_render::DARK_PAPER) };
+    let tiles_bg = dark_paper.map_or(t.input, egui::Color32::from_gray);
+    ui.painter().rect(area.shrink(1.0), 4.0, tiles_bg, Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
     for (k, (id, name)) in styles.iter().skip(start).take(visible).enumerate() {
         let r = Rect::from_min_size(pos2(area.min.x + 3.0 + k as f32 * 76.0, area.min.y + 3.0), vec2(74.0, area.height() - 6.0));
         let resp = ui.interact(r, ui.scope_id().with(("style_tile", id)), Sense::click());
         let active = *id == current;
         resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, active, name));
         if active {
-            ui.painter().rect(r, 3.0, t.checked, Stroke::new(1.0, t.accent), egui::StrokeKind::Inside);
+            ui.painter().rect_stroke(r, 4.0, Stroke::new(1.5, t.accent), egui::StrokeKind::Inside);
         } else if resp.hovered() {
-            ui.painter().rect_filled(r, 3.0, t.hover);
+            ui.painter().rect_stroke(r, 4.0, Stroke::new(1.0, t.border_strong), egui::StrokeKind::Inside);
         }
         let lang = crate::i18n::current().code();
-        let dark_page = app.session.view.dark_mode;
-        let key = format!("style:{id}:{skey}:{ppp}:{lang}:{dark_page}");
+        let key = format!("style:{id}:{skey}:{ppp}:{lang}:{dark_paper:?}");
         let doc = &app.session.doc;
         let tex = app.previews.get_or(ui.ctx(), &key, || {
             // Sample letters in the interface's script (`АаБбВвГг` in Russian).
@@ -553,19 +563,20 @@ pub fn style_gallery(app: &mut WordApp, ui: &mut Ui, state: &Value) {
             p.props.indent_left = Some(if first.is_finite() { (-first).max(0.0) } else { 0.0 });
             p.props.borders = None;
             p.props.shading = None;
-            style_snippet(doc, p, 220.0, 30.0, ppp, 1.0, dark_page)
+            style_snippet(doc, p, 220.0, 30.0, ppp, 1.0, dark_paper)
         });
         if let Some(h) = tex {
             let sz = h.size_vec2() / ppp;
             let ir = Rect::from_min_size(pos2(r.min.x + 3.0, r.min.y + 4.0), sz.min(vec2(68.0, 32.0)));
             let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2((ir.width() / sz.x).min(1.0), (ir.height() / sz.y).min(1.0)));
-            ui.painter().with_clip_rect(r).image(h.id(), ir, uv, preview_tint(&t, dark_page));
+            ui.painter().with_clip_rect(r).image(h.id(), ir, uv, egui::Color32::WHITE);
         }
-        let mut job = egui::text::LayoutJob::single_section(name.clone(), egui::TextFormat::simple(regular(10.5), t.text));
+        let label = if active { t.accent_text } else { t.text };
+        let mut job = egui::text::LayoutJob::single_section(name.clone(), egui::TextFormat::simple(regular(10.5), label));
         job.wrap = egui::text::TextWrapping::truncate_at_width(r.width() - 6.0);
         let galley = ui.painter().layout_job(job);
         let label_pos = pos2(r.center().x - galley.size().x / 2.0, r.max.y - 9.0 - galley.size().y / 2.0);
-        ui.painter().with_clip_rect(r).galley(label_pos, galley, t.text);
+        ui.painter().with_clip_rect(r).galley(label_pos, galley, label);
         // Right-click a tile: the same style actions as the Styles pane.
         resp.context_menu(|ui| {
             if ui.button(tl!("Update to Match Selection")).clicked() {
@@ -627,7 +638,7 @@ pub fn style_set_gallery(app: &mut WordApp, ui: &mut Ui) {
                 Block::Para(Paragraph::with_text(tl!("Heading 1"), CharProps::default()).styled("Heading1")),
                 Block::Para(Paragraph::with_text(tl!("Body text in a short paragraph to show spacing."), CharProps::default())),
             ];
-            snippet_blocks(&s.doc, blocks, 120.0, 110.0, ppp * 0.42, 6.0, None, false)
+            snippet_blocks(&s.doc, blocks, 120.0, 110.0, ppp * 0.42, 6.0, None, None)
         });
         if let Some(h) = tex {
             let sz = h.size_vec2() / ppp;
@@ -662,7 +673,7 @@ pub fn table_style_tile(ui: &mut Ui, app: &mut WordApp, style: &str) -> Response
                 c.blocks = vec![para_block(Paragraph::with_text(" ", CharProps { size: Some(5.0), ..Default::default() }))];
             }
         }
-        snippet_blocks(doc, vec![Block::Table(tb), Block::Para(Paragraph::new())], 104.0, 70.0, ppp * 0.48, 4.0, None, false)
+        snippet_blocks(doc, vec![Block::Table(tb), Block::Para(Paragraph::new())], 104.0, 70.0, ppp * 0.48, 4.0, None, None)
     });
     if let Some(h) = tex {
         let sz = h.size_vec2() / ppp;
