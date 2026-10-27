@@ -1,5 +1,6 @@
-//! The zoom sliders (status bar, the Print preview): egui's slider takes the pointer and the
-//! keys, and is drawn as a thin rail with the accent colour up to a round knob.
+//! WordCraft's sliders (zoom in the status bar and the Print preview, transparency, Read Aloud
+//! speed): egui's slider takes the pointer and the keys, and is drawn as a thin rail with the
+//! accent colour up to a round knob, so the rail shows on white panes too.
 
 use egui::{Rect, Response, Stroke, Ui, pos2};
 
@@ -7,11 +8,20 @@ use crate::theme::Tokens;
 
 /// A zoom slider over `range` (on a log scale with `logarithmic`), `width` wide.
 pub fn zoom_slider(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>, logarithmic: bool, width: f32) -> Response {
-    let slider = egui::Slider::new(value, range.clone())
+    slider(ui, value, range, logarithmic, width, 0.0)
+}
+
+/// A slider over `range` (on a log scale with `logarithmic`), `width` wide, without a value box
+/// (add a `DragValue` after it for one); a positive `step` snaps the value to its multiples.
+pub fn slider(ui: &mut Ui, value: &mut f32, range: std::ops::RangeInclusive<f32>, logarithmic: bool, width: f32, step: f64) -> Response {
+    let mut slider = egui::Slider::new(value, range.clone())
         .logarithmic(logarithmic)
         .show_value(false)
         .handle_shape(egui::style::HandleShape::Circle)
         .trailing_fill(false);
+    if step > 0.0 {
+        slider = slider.step_by(step);
+    }
     // egui's own rail and knob are drawn invisibly; ours are painted over them.
     let response = ui
         .scope(|ui| {
@@ -46,9 +56,12 @@ fn paint(ui: &Ui, response: &Response, fraction: f32, t: &Tokens) {
     let x = egui::lerp(travel, fraction);
     let y = rect.center().y;
     let p = ui.painter();
-    let rail = Rect::from_min_max(pos2(rect.left(), y - 1.5), pos2(rect.right(), y + 1.5));
+    // The rail spans the knob's travel, so at the start no sliver of accent shows beside the knob.
+    let rail = Rect::from_min_max(pos2(travel.min, y - 1.5), pos2(travel.max, y + 1.5));
     p.rect_filled(rail, 1.5, t.border_strong);
-    p.rect_filled(Rect::from_min_max(rail.min, pos2(x, rail.max.y)), 1.5, t.accent);
+    if x > rail.min.x {
+        p.rect_filled(Rect::from_min_max(rail.min, pos2(x, rail.max.y)), 1.5, t.accent);
+    }
     let hot = response.hovered() || response.dragged() || response.has_focus();
     let ring = if hot { t.accent } else { t.input_border };
     p.circle(pos2(x, y), 6.0, t.input, Stroke::new(if hot { 1.5 } else { 1.0 }, ring));

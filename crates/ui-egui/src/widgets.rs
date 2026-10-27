@@ -26,13 +26,13 @@ pub use combo::{
 };
 #[cfg(test)]
 use combo::{Row, highlight_row, section_row, section_rows};
-pub use dropdown::{Dropdown, dropdown, field_label, label_column};
+pub use dropdown::{Dropdown, dropdown, field_label, label_column, menu_field};
 pub use groups::{command_icon, command_menu, customize_menu_items, group, group_titled, row};
 pub use icon_buttons::{
     DIALOG_BUTTON_W, dialog_tabs, dialog_tabs_index, icon_button, icon_menu_item, icon_only_button, icon_text_button, icon_text_button_width,
     icon_text_menu_button, primary_button, secondary_button,
 };
-pub use slider::zoom_slider;
+pub use slider::{slider, zoom_slider};
 #[cfg(test)]
 use tooltip::show_hint;
 #[cfg(test)]

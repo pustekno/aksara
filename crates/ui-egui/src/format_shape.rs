@@ -142,8 +142,10 @@ fn solid(app: &mut WordApp, ui: &mut Ui, theme: &[Rgb], color: Rgb, transparency
 fn percent(ui: &mut Ui, label: &str, v: &mut f32) -> Option<Response> {
     ui.horizontal(|ui| {
         let label = ui.label(label);
-        let s = ui.add(egui::Slider::new(v, 0.0..=100.0).suffix("%").fixed_decimals(0)).labelled_by(label.id);
-        (s.changed()).then_some(s)
+        let s = crate::widgets::slider(ui, v, 0.0..=100.0, false, 100.0, 0.0).labelled_by(label.id);
+        let d = ui.add(egui::DragValue::new(v).range(0.0..=100.0).suffix("%").fixed_decimals(0)).labelled_by(label.id);
+        let r = s | d;
+        r.changed().then_some(r)
     })
     .inner
 }
@@ -154,10 +156,7 @@ fn color_field(ui: &mut Ui, theme: &[Rgb], id: Id, c: &mut Rgb) -> bool {
     crate::colors::take_field(ui.ctx(), id, &mut hex);
     ui.horizontal(|ui| {
         ui.label(tl!("Color"));
-        let (r, _) = ui.allocate_exact_size(vec2(18.0, 14.0), Sense::hover());
-        ui.painter().rect_filled(r, 2.0, crate::theme::c32(*c));
-        ui.painter().rect_stroke(r, 2.0, Stroke::new(1.0, Tokens::get(ui.ctx()).border), egui::StrokeKind::Inside);
-        ui.menu_button("▾", |ui| crate::colors::field_menu(ui, theme, id, &mut hex));
+        crate::widgets::menu_field(ui, tl!("Color"), Some(crate::theme::c32(*c)), |ui| crate::colors::field_menu(ui, theme, id, &mut hex));
     });
     match Rgb::parse(&hex) {
         Some(n) if n != *c => {
@@ -218,7 +217,7 @@ fn kind_of(t: usize, focus: [f32; 4], angle: f32, scaled: bool) -> GradientKind 
 fn gradient(app: &mut WordApp, ui: &mut Ui, theme: &[Rgb], g: &Gradient) {
     egui::Grid::new("format_shape.gradient").num_columns(2).spacing(vec2(8.0, 6.0)).show(ui, |ui| {
         ui.label(tl!("Preset gradients"));
-        ui.menu_button("▾", |ui| {
+        crate::widgets::menu_field(ui, tl!("Preset gradients"), None, |ui| {
             if let Some(f) = presets_gallery(ui, theme) {
                 apply(app, ui, Some(&f), None);
                 ui.close();
@@ -247,7 +246,7 @@ fn gradient(app: &mut WordApp, ui: &mut Ui, theme: &[Rgb], g: &Gradient) {
 
         if t != 3 {
             ui.label(tl!("Direction"));
-            ui.menu_button("▾", |ui| {
+            crate::widgets::menu_field(ui, tl!("Direction"), None, |ui| {
                 if let Some(kind) = directions(ui, g, t) {
                     apply(app, ui, Some(&with(g, |g| set_kind(g, kind))), None);
                     ui.close();

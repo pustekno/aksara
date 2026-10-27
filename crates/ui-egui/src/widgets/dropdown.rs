@@ -48,6 +48,35 @@ impl<'a> Dropdown<'a> {
     }
 }
 
+/// A small field that opens a menu (`add_contents`): the input colour with a chevron, and a colour
+/// swatch before it when given; outlined like a drop-down, in the accent colour while open.
+/// `label` names it for screen readers. The menu's result, while it is open.
+pub fn menu_field<R>(ui: &mut Ui, label: &str, swatch: Option<egui::Color32>, add_contents: impl FnOnce(&mut Ui) -> R) -> Option<R> {
+    let t = Tokens::get(ui.ctx());
+    let h = ui.spacing().interact_size.y;
+    let w = if swatch.is_some() { 46.0 } else { 30.0 };
+    let (rect, resp) = ui.allocate_exact_size(vec2(w, h), egui::Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
+    let stroke = if open || resp.has_focus() {
+        t.accent
+    } else if resp.hovered() {
+        t.text_dim
+    } else {
+        t.input_border
+    };
+    let p = ui.painter();
+    p.rect(rect, egui::CornerRadius::same(theme::CONTROL_RADIUS), t.input, egui::Stroke::new(1.0, stroke), egui::StrokeKind::Inside);
+    if let Some(c) = swatch {
+        let sw = Rect::from_min_size(egui::pos2(rect.min.x + 7.0, rect.center().y - 6.0), vec2(18.0, 12.0));
+        p.rect_filled(sw, 2.0, c);
+        p.rect_stroke(sw, 2.0, egui::Stroke::new(1.0, t.border), egui::StrokeKind::Inside);
+    }
+    let chevron = Rect::from_center_size(egui::pos2(rect.max.x - 11.0, rect.center().y), vec2(super::DROPDOWN, super::DROPDOWN));
+    icons::paint(p, chevron, if open { "dropup" } else { "dropdown" }, t.text_dim, t.text_dim);
+    egui::Popup::menu(&resp).show(add_contents).map(|r| r.inner)
+}
+
 /// The label before a field in a form row (`text` already translated), in a column at least
 /// `width` wide so the fields of the rows above and below line up; a longer label (a long
 /// translation) widens its own row only.
@@ -118,6 +147,29 @@ mod tests {
         assert!(chevron, "no chevron line in the field");
         let triangle = shapes.iter().any(|c| matches!(&c.shape, egui::Shape::Path(p) if p.closed && p.fill == t.text));
         assert!(!triangle, "egui's filled triangle is still drawn");
+    }
+
+    /// A menu field draws a field (input colour, input outline, the controls' corners) with its
+    /// colour swatch and a chevron, where Format Shape had a bare "▾" text button; closed, the
+    /// menu's contents are not built.
+    #[test]
+    fn a_menu_field_is_a_field_with_a_swatch_and_a_chevron() {
+        let t = Tokens::light();
+        let swatch = egui::Color32::from_rgb(0x5B, 0x8D, 0xEF);
+        let mut built = false;
+        let shapes = painted(|ui| {
+            let out = menu_field(ui, "Color", Some(swatch), |_| built = true);
+            assert!(out.is_none(), "a closed menu gives nothing");
+        });
+        assert!(!built, "a closed menu builds nothing");
+        let field = shapes.iter().any(|c| {
+            matches!(&c.shape, egui::Shape::Rect(r) if r.fill == t.input && r.stroke.color == t.input_border
+                && r.corner_radius == egui::CornerRadius::same(crate::theme::CONTROL_RADIUS))
+        });
+        assert!(field, "no field in the input colour with the input outline");
+        assert!(shapes.iter().any(|c| matches!(&c.shape, egui::Shape::Rect(r) if r.fill == swatch)), "no swatch");
+        let dim = egui::epaint::ColorMode::Solid(t.text_dim);
+        assert!(shapes.iter().any(|c| matches!(&c.shape, egui::Shape::Path(p) if !p.closed && p.stroke.color == dim)), "no chevron");
     }
 
     /// The list's rows have no outline (the chosen one was boxed in the input border) and the

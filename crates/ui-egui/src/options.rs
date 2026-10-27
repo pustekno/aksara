@@ -507,9 +507,11 @@ fn accessibility(app: &mut WordApp, ui: &mut Ui) {
     let mut rate = app.session.read_aloud.rate();
     ui.horizontal(|ui| {
         let label = ui.label(tl!("Speed"));
-        let r =
-            ui.add(egui::Slider::new(&mut rate, MIN_RATE..=MAX_RATE).step_by(0.05).custom_formatter(|v, _| format!("{v:.2}×"))).labelled_by(label.id);
-        if r.changed() {
+        let s = crate::widgets::slider(ui, &mut rate, MIN_RATE..=MAX_RATE, false, 120.0, 0.05).labelled_by(label.id);
+        let d = ui
+            .add(egui::DragValue::new(&mut rate).range(MIN_RATE..=MAX_RATE).speed(0.05).custom_formatter(|v, _| format!("{v:.2}×")))
+            .labelled_by(label.id);
+        if (s | d).changed() {
             let _ = app.run("readAloud.speed", json!({"value": rate}));
         }
     });
