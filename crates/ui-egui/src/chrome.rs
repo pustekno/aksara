@@ -540,32 +540,6 @@ pub fn focus_ribbon(app: &mut WordApp, ctx: &egui::Context) {
 
 /// Draws the status bar's page, word count, zoom and status controls, fitting a status message
 /// with a tooltip; without a document the bar is empty.
-/// Where `value` sits along a slider over `range`, 0 to 1, as egui places its knob: on a log scale
-/// for a logarithmic slider over positive values.
-fn slider_fraction(value: f32, range: &std::ops::RangeInclusive<f32>, logarithmic: bool) -> f32 {
-    let (lo, hi) = (*range.start(), *range.end());
-    let f = if logarithmic && lo > 0.0 && value > 0.0 { (value.log10() - lo.log10()) / (hi.log10() - lo.log10()) } else { (value - lo) / (hi - lo) };
-    if f.is_finite() { f.clamp(0.0, 1.0) } else { 0.0 }
-}
-
-/// The status bar's zoom slider, over egui's invisible one: a thin rail, the accent colour up to
-/// the knob, and a round knob outlined in the accent colour while it is under the pointer, dragged
-/// or focused.
-fn paint_zoom_slider(ui: &Ui, response: &egui::Response, fraction: f32, t: &Tokens) {
-    let rect = response.rect;
-    // The knob's centre travels where egui's round knob would: inset by its radius at both ends.
-    let travel = rect.x_range().shrink(rect.height() / 2.5);
-    let x = egui::lerp(travel, fraction);
-    let y = rect.center().y;
-    let p = ui.painter();
-    let rail = Rect::from_min_max(pos2(rect.left(), y - 1.5), pos2(rect.right(), y + 1.5));
-    p.rect_filled(rail, 1.5, t.border_strong);
-    p.rect_filled(Rect::from_min_max(rail.min, pos2(x, rail.max.y)), 1.5, t.accent);
-    let hot = response.hovered() || response.dragged() || response.has_focus();
-    let ring = if hot { t.accent } else { t.input_border };
-    p.circle(pos2(x, y), 6.0, t.input, Stroke::new(if hot { 1.5 } else { 1.0 }, ring));
-}
-
 pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::bottom("status")
@@ -681,25 +655,7 @@ pub fn status_bar(app: &mut WordApp, ui: &mut Ui) {
                     // Reading zoom changes only reading presentation, never the normal view zoom.
                     let mut v = if reading { app.session.view.read_zoom } else { app.canvas.scale / crate::canvas::PX_PER_PT };
                     let range = if reading { 0.75..=1.5 } else { 0.1..=5.0 };
-                    let slider = egui::Slider::new(&mut v, range.clone())
-                        .logarithmic(!reading)
-                        .show_value(false)
-                        .handle_shape(egui::style::HandleShape::Circle)
-                        .trailing_fill(false);
-                    ui.spacing_mut().slider_width = 110.0;
-                    // egui's own rail and knob are drawn invisibly; the bar paints its own over them.
-                    let response = ui
-                        .scope(|ui| {
-                            let w = &mut ui.visuals_mut().widgets;
-                            for s in [&mut w.inactive, &mut w.hovered, &mut w.active] {
-                                s.bg_fill = egui::Color32::TRANSPARENT;
-                                s.fg_stroke = Stroke::NONE;
-                                s.expansion = 0.0;
-                            }
-                            ui.add(slider)
-                        })
-                        .inner;
-                    paint_zoom_slider(ui, &response, slider_fraction(v, &range, !reading), &t);
+                    let response = crate::widgets::zoom_slider(ui, &mut v, range, !reading, 110.0);
                     response.widget_info(|| {
                         egui::WidgetInfo::labeled(egui::Role::Slider, ui.is_enabled(), if reading { tl!("Text Size") } else { tl!("Zoom") })
                     });

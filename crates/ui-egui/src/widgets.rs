@@ -11,6 +11,7 @@ mod combo;
 mod dropdown;
 mod groups;
 mod icon_buttons;
+mod slider;
 mod tooltip;
 
 pub use buttons::{
@@ -31,6 +32,7 @@ pub use icon_buttons::{
     DIALOG_BUTTON_W, dialog_tabs, dialog_tabs_index, icon_button, icon_menu_item, icon_only_button, icon_text_button, icon_text_button_width,
     icon_text_menu_button, primary_button, secondary_button,
 };
+pub use slider::zoom_slider;
 #[cfg(test)]
 use tooltip::show_hint;
 #[cfg(test)]
