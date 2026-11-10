@@ -1,33 +1,33 @@
-//! Drop-down lists in dialogs, panes and the File page: egui's combo box drawn the WordCraft way.
+//! Drop-down lists in dialogs, panes and the File page: the combo box drawn the WordCraft way.
 //! The field keeps the input colour with a chevron at its end, its outline turns the accent
 //! colour while the list is open, and the list reads like a menu: roomy rows, a rounded
 //! highlight under the pointer, no box around a row, the chosen row tinted.
 //!
-//! Use [`dropdown`] where `egui::ComboBox::from_id_salt` would go; it takes the same calls.
+//! Use [`dropdown`] where `craft_ui::ComboBox::from_id_salt` would go; it takes the same calls.
 
 use egui::{InnerResponse, Rect, Ui, style::WidgetVisuals, vec2};
 
 use crate::icons;
 use crate::theme::{self, Tokens};
 
-/// A drop-down with the id `id_salt`, like `egui::ComboBox::from_id_salt`.
+/// A drop-down with the id `id_salt`, like `craft_ui::ComboBox::from_id_salt`.
 pub fn dropdown<'a>(id_salt: impl egui::AsIdSalt) -> Dropdown<'a> {
-    Dropdown { combo: egui::ComboBox::from_id_salt(id_salt) }
+    Dropdown { combo: craft_ui::ComboBox::from_id_salt(id_salt) }
 }
 
 /// A drop-down being built; see [`dropdown`].
 #[must_use = "a drop-down shows nothing until `show_ui` is called"]
 pub struct Dropdown<'a> {
-    combo: egui::ComboBox<'a>,
+    combo: craft_ui::ComboBox<'a>,
 }
 
 impl<'a> Dropdown<'a> {
-    /// The field's least width, as `egui::ComboBox::width`.
+    /// The field's least width, as `craft_ui::ComboBox::width`.
     pub fn width(self, width: f32) -> Self {
         Dropdown { combo: self.combo.width(width) }
     }
 
-    /// The list's greatest height before it scrolls, as `egui::ComboBox::height`.
+    /// The list's greatest height before it scrolls, as `craft_ui::ComboBox::height`.
     pub fn height(self, height: f32) -> Self {
         Dropdown { combo: self.combo.height(height) }
     }
@@ -74,7 +74,7 @@ pub fn menu_field<R>(ui: &mut Ui, label: &str, swatch: Option<egui::Color32>, ad
     }
     let chevron = Rect::from_center_size(egui::pos2(rect.max.x - 11.0, rect.center().y), vec2(super::DROPDOWN, super::DROPDOWN));
     icons::paint(p, chevron, if open { "dropup" } else { "dropdown" }, t.text_dim, t.text_dim);
-    egui::Popup::menu(&resp).show(add_contents).map(|r| r.inner)
+    crate::rtl::menu(&resp).show(add_contents).map(|r| r.inner)
 }
 
 /// The label before a field in a form row (`text` already translated), in a column at least

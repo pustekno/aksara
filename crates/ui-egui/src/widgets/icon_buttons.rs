@@ -1,6 +1,6 @@
 use super::buttons::DROPDOWN;
 use super::combo::drawn_state;
-use super::*;
+use super::{Color32, CornerRadius, Rect, Response, Sense, Stroke, Tokens, Ui, icons, pos2, regular, vec2};
 
 /// The least width of a dialog's OK, Cancel and Close buttons, so a short word still makes a
 /// button that is easy to hit and the pair lines up.
@@ -73,19 +73,22 @@ fn icon_text_button_with(ui: &mut Ui, icon: &str, text: &str, font: egui::FontId
     let st = drawn_state(ui, &resp, true);
     let r = r.expand(st.expansion);
     ui.painter().rect(r, ui.visuals().widgets.inactive.corner_radius, st.fill, st.stroke, egui::StrokeKind::Inside);
+    // By language, not by layout: these buttons also sit in far-side clusters, which fill from
+    // the other end.
+    let rtl = crate::rtl::on();
     icons::paint(
         ui.painter(),
-        Rect::from_center_size(pos2(r.min.x + pad.x + icon_w / 2.0, r.center().y), vec2(icon_w, icon_w)),
+        Rect::from_center_size(pos2(crate::rtl::lead_x(rtl, r, pad.x + icon_w / 2.0), r.center().y), vec2(icon_w, icon_w)),
         icon,
         t.icon,
         t.accent,
     );
-    let text_x = r.min.x + pad.x + icon_w + if show_text { 4.0 } else { 0.0 };
+    let text_x = crate::rtl::lead_left(rtl, r, pad.x + icon_w + if show_text { 4.0 } else { 0.0 }, text_w);
     if show_text {
         ui.painter().galley(pos2(text_x, r.center().y - galley.size().y / 2.0), galley, st.text);
     }
     if marker {
-        let c = pos2(text_x + text_w + 4.0 + DROPDOWN / 2.0, r.center().y);
+        let c = pos2(if rtl { text_x - 4.0 - DROPDOWN / 2.0 } else { text_x + text_w + 4.0 + DROPDOWN / 2.0 }, r.center().y);
         icons::paint(ui.painter(), Rect::from_center_size(c, vec2(DROPDOWN, DROPDOWN)), "dropdown", st.text, st.text);
     }
     resp
@@ -138,12 +141,15 @@ pub fn dialog_tabs(ui: &mut Ui, labels: &[String], selected: usize) -> Option<us
     let base_y = origin.y + H;
     // The hairline under the strip first, so the open tab's bar lies over it.
     ui.painter().hline(origin.x..=origin.x + width, base_y - 0.5, Stroke::new(1.0, t.border));
-    let mut x = origin.x;
+    // Right to left, the tabs start at the right edge and run leftwards.
+    let rtl = crate::rtl::flows(ui);
+    let mut x = if rtl { origin.x + width } else { origin.x };
     let mut clicked = None;
     for (i, label) in labels.iter().enumerate() {
         let on = i == selected;
         let w = text_w.get(i).copied().unwrap_or(0.0) + 2.0 * pad;
-        let r = Rect::from_min_max(pos2(x, origin.y), pos2(x + w, base_y));
+        let left = if rtl { x - w } else { x };
+        let r = Rect::from_min_max(pos2(left, origin.y), pos2(left + w, base_y));
         let resp = ui.interact(r, ui.scope_id().with(("dialog_tab", i)), Sense::click());
         resp.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, on, label));
         let hover = ui.ctx().animate_bool_responsive(resp.id.with("hover"), resp.hovered() && !on);
@@ -162,7 +168,7 @@ pub fn dialog_tabs(ui: &mut Ui, labels: &[String], selected: usize) -> Option<us
         if resp.clicked() && !on {
             clicked = Some(i);
         }
-        x += w;
+        x += if rtl { -w } else { w };
     }
     ui.allocate_space(vec2(width, H + 1.0));
     clicked

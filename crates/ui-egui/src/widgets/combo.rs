@@ -1,6 +1,6 @@
 use super::buttons::DROPDOWN;
 use super::tooltip::{keytip_badge, show_hint};
-use super::*;
+use super::{Color32, CornerRadius, Rect, Response, Sense, Stroke, Tokens, Ui, icons, pos2, regular, vec2};
 
 /// Word's standard colour grid (theme colours + tints, standard colours). Returns a picked hex.
 pub fn color_grid(ui: &mut Ui, theme: &[wordcraft_doc::Rgb]) -> Option<String> {
@@ -39,6 +39,44 @@ pub fn color_grid(ui: &mut Ui, theme: &[wordcraft_doc::Rgb]) -> Option<String> {
     picked
 }
 
+fn hover_key() -> egui::Id {
+    egui::Id::unique("wc_pick_hover")
+}
+
+/// Records the list entry or colour the pointer is over in this pass (one per pass; the last
+/// drawn wins). [`take_hover`] reads it.
+pub(crate) fn note_hover(ctx: &egui::Context, value: String) {
+    let pass = ctx.cumulative_pass_nr();
+    ctx.data_mut(|d| d.insert_temp(hover_key(), (pass, value)));
+}
+
+/// The entry noted by [`note_hover`] in this pass, if any; it is read once. Callers take before
+/// drawing a list too, to drop what another widget noted.
+pub(crate) fn take_hover(ctx: &egui::Context) -> Option<String> {
+    let pass = ctx.cumulative_pass_nr();
+    let seen = ctx.data_mut(|d| d.remove_temp::<(u64, String)>(hover_key()));
+    seen.filter(|(p, _)| *p == pass).map(|(_, v)| v)
+}
+
+fn current_key() -> egui::Id {
+    egui::Id::unique("wc_pick_current")
+}
+
+/// The colour (hex, or a name the menu uses) a palette marks as the one in effect; `None` marks
+/// nothing. The caller sets it before drawing a menu and clears it after.
+pub(crate) fn set_current_pick(ctx: &egui::Context, current: Option<String>) {
+    ctx.data_mut(|d| match current {
+        Some(c) => {
+            d.insert_temp(current_key(), c);
+        }
+        None => d.remove::<String>(current_key()),
+    });
+}
+
+pub(crate) fn current_pick(ctx: &egui::Context) -> Option<String> {
+    ctx.data(|d| d.get_temp::<String>(current_key()))
+}
+
 pub(crate) fn swatch(ui: &mut Ui, c: wordcraft_doc::Rgb) -> bool {
     let (r, resp) = ui.allocate_exact_size(vec2(15.0, 15.0), Sense::click());
     ui.painter().rect_filled(r, 0.0, Color32::from_rgb(c.0, c.1, c.2));
@@ -49,6 +87,12 @@ pub(crate) fn swatch(ui: &mut Ui, c: wordcraft_doc::Rgb) -> bool {
         Stroke::new(if resp.hovered() { 1.5 } else { 0.5 }, if resp.hovered() { t.accent } else { t.border_strong }),
         egui::StrokeKind::Inside,
     );
+    if resp.hovered() {
+        note_hover(ui.ctx(), c.hex());
+    }
+    if current_pick(ui.ctx()).is_some_and(|cur| cur.eq_ignore_ascii_case(&c.hex())) {
+        ui.painter().rect_stroke(r.expand(1.0), 0.0, Stroke::new(2.0, t.accent), egui::StrokeKind::Outside);
+    }
     resp.on_hover_text(format!("#{}", c.hex())).clicked()
 }
 
@@ -62,7 +106,7 @@ pub fn combo(
     items: &[String],
     preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
 ) -> Option<String> {
-    combo_impl(ui, id, width, current, items, &[], preview, false, "")
+    combo_impl(ui, ComboOptions { id, width, current, items, recent: &[], preview, search: false, tip: "", shown_as: None })
 }
 
 /// [`combo`] whose field and arrow show the hover hint `tip` (already translated).
@@ -75,7 +119,7 @@ pub fn combo_hint(
     preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
     tip: &str,
 ) -> Option<String> {
-    combo_impl(ui, id, width, current, items, &[], preview, false, tip)
+    combo_impl(ui, ComboOptions { id, width, current, items, recent: &[], preview, search: false, tip, shown_as: None })
 }
 
 /// What [`font_combo`] returns when its list's last entry, Add Font…, is chosen (#582): the
@@ -99,7 +143,7 @@ pub fn font_combo(
     items: &[String],
     preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
 ) -> Option<String> {
-    combo_impl(ui, id, width, current, items, &[], preview, true, tl!("Font"))
+    combo_impl(ui, ComboOptions { id, width, current, items, recent: &[], preview, search: true, tip: tl!("Font"), shown_as: None })
 }
 
 /// [`font_combo`] with the `recent` families (most recent first) in a Recently Used Fonts
@@ -116,21 +160,61 @@ pub fn font_combo_with_recent(
     recent: &[String],
     preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
 ) -> Option<String> {
-    combo_impl(ui, id, width, current, items, recent, preview, true, tl!("Font"))
+    combo_impl(ui, ComboOptions { id, width, current, items, recent, preview, search: true, tip: tl!("Font"), shown_as: None })
 }
 
-/// [`font_combo_with_recent`] with a hover hint `tip` (already translated).
-pub fn font_combo_with_recent_hint(
-    ui: &mut Ui,
-    id: &str,
+/// [`font_combo_with_recent`] with a hover hint `tip` (already translated). With `shown_as`
+/// (the families drawn instead of a `current` font that isn't installed) the box carries a
+/// warning mark saying so.
+pub struct FontComboOptions<'a> {
+    pub id: &'a str,
+    pub width: f32,
+    pub current: &'a str,
+    pub items: &'a [String],
+    pub recent: &'a [String],
+    pub preview: Option<&'a dyn Fn(&mut Ui, &str) -> Response>,
+    pub tip: &'a str,
+    pub shown_as: Option<&'a str>,
+}
+
+pub fn font_combo_with_recent_hint(ui: &mut Ui, options: FontComboOptions<'_>) -> Option<String> {
+    combo_impl(
+        ui,
+        ComboOptions {
+            search: true,
+            id: options.id,
+            width: options.width,
+            current: options.current,
+            items: options.items,
+            recent: options.recent,
+            preview: options.preview,
+            tip: options.tip,
+            shown_as: options.shown_as,
+        },
+    )
+}
+
+/// The hover note for a font that isn't installed, `shown_as` drawn instead.
+fn missing_font_tip(font: &str, shown_as: &str) -> String {
+    crate::i18n::fmt(
+        tl!(
+            "{font} isn't installed on this computer, so its text is shown in {shown}. Line breaks and page count can differ from where the document was made. If you have the font file, add it with Add Font… at the end of this list."
+        ),
+        &[("font", font), ("shown", shown_as)],
+    )
+}
+
+struct ComboOptions<'a> {
+    id: &'a str,
     width: f32,
-    current: &str,
-    items: &[String],
-    recent: &[String],
-    preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
-    tip: &str,
-) -> Option<String> {
-    combo_impl(ui, id, width, current, items, recent, preview, true, tip)
+    current: &'a str,
+    items: &'a [String],
+    recent: &'a [String],
+    preview: Option<&'a dyn Fn(&mut Ui, &str) -> Response>,
+    search: bool,
+    tip: &'a str,
+    /// See [`FontComboOptions::shown_as`].
+    shown_as: Option<&'a str>,
 }
 
 /// Indices of the `items` matching `query`, ignoring case: exact matches, then the names starting
@@ -180,20 +264,23 @@ struct ComboSearch {
     view_h: f32,
 }
 
+/// The warning mark at the right end of the field `resp` when its font `current` isn't installed
+/// and is drawn in `shown_as`, with its note as the field's description (the note is a hover
+/// hint: a screen reader reads it here). Returns the note, for the field's hover.
+fn missing_font_mark(ui: &Ui, resp: &egui::Response, current: &str, shown_as: Option<&str>, t: &Tokens) -> Vec<String> {
+    let Some(shown) = shown_as else { return Vec::new() };
+    let r = Rect::from_center_size(pos2(resp.rect.right() - 9.0, resp.rect.center().y), vec2(12.0, 12.0));
+    icons::paint(ui.painter(), r, "fontMissing", t.icon, t.accent);
+    let note = missing_font_tip(current, shown);
+    ui.ctx().accesskit_node_builder(resp.id, |n| n.set_description(note.as_str()));
+    vec![note]
+}
+
 /// Draws an editable or searchable combo box: keeps temporary text and search state, supports
 /// keyboard selection, popup rows with recent and preview sections, an arrow and hint, and
 /// returns the chosen or committed text.
-fn combo_impl(
-    ui: &mut Ui,
-    id: &str,
-    width: f32,
-    current: &str,
-    items: &[String],
-    recent: &[String],
-    preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
-    search: bool,
-    tip: &str,
-) -> Option<String> {
+fn combo_impl(ui: &mut Ui, options: ComboOptions<'_>) -> Option<String> {
+    let ComboOptions { id, width, current, items, recent, preview, search, tip, shown_as } = options;
     let mut out = None;
     let edit_id = ui.scope_id().with(("combo_text", id));
     let te_id = ui.scope_id().with(("combo_edit", id));
@@ -216,13 +303,16 @@ fn combo_impl(
                 }
             });
         }
+        // A font that isn't installed: room at the field's right end for the warning mark.
+        let mark = shown_as.filter(|_| !current.is_empty());
+        let right = if mark.is_some() { 18 } else { 2 };
         // The field and its arrow are one box: the text field draws no frame of its own, and the
         // box is painted here, under both, once their size and state are known.
         let te = egui::TextEdit::singleline(&mut text)
             .id(te_id)
             .desired_width(width - ARROW_W)
             .font(regular(12.0))
-            .frame(egui::Frame::NONE.inner_margin(egui::Margin { left: 6, right: 2, top: 3, bottom: 3 }));
+            .frame(egui::Frame::NONE.inner_margin(egui::Margin { left: 6, right, top: 3, bottom: 3 }));
         let outline = ui.painter().add(egui::Shape::Noop);
         let resp = ui.add(te);
         // The field says what it is: without a name a screen reader has only "edit" to say
@@ -230,6 +320,7 @@ fn combo_impl(
         if !tip.is_empty() {
             resp.widget_info(|| egui::WidgetInfo::labeled(egui::Role::TextInput, ui.is_enabled(), tip));
         }
+        let notes = missing_font_mark(ui, &resp, current, mark, &t);
         keytip_badge(ui, resp.rect, "combo", id);
         focused = resp.has_focus();
         let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -306,35 +397,64 @@ fn combo_impl(
         // A field only focused by Tab, with nothing typed, still gets its (delayed) keyboard hint.
         let typing = focused && text != current;
         if !tip.is_empty() && !typing && !s.open {
-            show_hint(&resp, tip, &[]);
-            show_hint(&aresp, tip, &[]);
+            show_hint(&resp, tip, &notes);
+            show_hint(&aresp, tip, &notes);
         }
         let chevron = if list_open { "dropup" } else { "dropdown" };
         icons::paint(ui.painter(), Rect::from_center_size(ar.center(), vec2(DROPDOWN, DROPDOWN)), chevron, t.text_dim, t.text_dim);
         // The list drops from the box's left edge, as in Word, not from the arrow (#535).
         // The font list closes on a chosen entry or a click outside it, not on its headings.
         let close = if search { egui::PopupCloseBehavior::CloseOnClickOutside } else { egui::PopupCloseBehavior::CloseOnClick };
-        let list = egui::Popup::menu(&aresp).anchor(resp.rect.union(ar)).close_behavior(close).style(crate::theme::list_rows);
-        list.show(|ui| {
-            let item = |k: usize| items.get(k);
-            let row = |k: usize| section_row(k, recent, &item);
-            if let Some(v) = list_rows(ui, width, current, section_rows(recent.len(), items.len()), &row, None, None, preview).0 {
-                out = Some(v);
+        let mut menu_field = aresp.clone();
+        menu_field.rect = resp.rect.union(ar);
+        let menu = craft_ui::combo::Menu::new(ui, &menu_field).close_behavior(close).height(420.0).style(crate::theme::list_rows);
+        let row_h = if preview.is_some() { COMBO_PREVIEW_ROW_H } else { ui.spacing().interact_size.y };
+        // The recent section keeps its order while the list stays open: a pick moves the family to
+        // the top for the next time the list opens, not under the pointer.
+        let frozen_id = search_id.with("recent_frozen");
+        let menu_recent: Vec<String> = ui.data(|d| d.get_temp(frozen_id)).unwrap_or_else(|| recent.to_vec());
+        let item = |k: usize| items.get(k);
+        let row = |k: usize| section_row(k, &menu_recent, &item);
+        let total = section_rows(menu_recent.len(), items.len());
+        let list = |ui: &mut Ui, range: std::ops::Range<usize>, ()| {
+            let picked = draw_rows(
+                ui,
+                RowDrawOptions { width, current, range, row: &row, highlight: None, preview, row_height: row_h, recent_rows: menu_recent.len() },
+            );
+            if picked.is_some() {
                 ui.close();
             }
-            if search {
-                ui.separator();
-                if ui.button(tl!("Add Font…")).clicked() {
-                    out = Some(ADD_FONT.to_string());
-                    ui.close();
-                }
-                #[cfg(target_arch = "wasm32")]
-                if ui.button(tl!("Load System Installed Fonts…")).clicked() {
-                    out = Some(LOAD_SYSTEM_FONTS.to_string());
-                    ui.close();
-                }
+            picked
+        };
+        let footer = |ui: &mut Ui| {
+            let mut picked = None;
+            ui.separator();
+            if ui.button(tl!("Add Font…")).clicked() {
+                picked = Some(ADD_FONT.to_string());
+                ui.close();
+            }
+            #[cfg(target_arch = "wasm32")]
+            if ui.button(tl!("Load System Installed Fonts…")).clicked() {
+                picked = Some(LOAD_SYSTEM_FONTS.to_string());
+                ui.close();
+            }
+            picked
+        };
+        let picked = if search {
+            menu.show_rows_with_header_footer(|_| (), row_h, |()| total, list, footer).map(|(v, f)| v.or(f))
+        } else {
+            menu.show_rows_with_header(|_| (), row_h, |()| total, list)
+        };
+        ui.data_mut(|d| {
+            if picked.is_some() {
+                d.insert_temp(frozen_id, menu_recent.clone());
+            } else {
+                d.remove::<Vec<String>>(frozen_id);
             }
         });
+        if let Some(v) = picked.flatten() {
+            out = Some(v);
+        }
         let n = section_rows(recent_shown.len(), s.matches.len());
         if s.open && n > 0 {
             let matches = s.matches.clone();
@@ -356,7 +476,10 @@ fn combo_impl(
                     .show(ui, |ui| {
                         let item = |k: usize| matches.get(k).and_then(|&i| items.get(i));
                         let row = |k: usize| section_row(k, recent_shown, &item);
-                        list_rows(ui, width, current, n, &row, Some(lit), scroll, preview)
+                        list_rows(
+                            ui,
+                            RowListOptions { width, current, n, row: &row, highlight: Some(lit), scroll, preview, recent_rows: recent_shown.len() },
+                        )
                     })
                     .inner
             });
@@ -398,7 +521,20 @@ pub const COMBO_PREVIEW_ROW_H: f32 = 24.0;
 /// family and each preview loads that font, so building all rows loaded every font on the system
 /// (gigabytes on large font collections) and froze the app (#121).
 pub fn combo_list(ui: &mut Ui, width: f32, current: &str, items: &[String], preview: Option<&dyn Fn(&mut Ui, &str) -> Response>) -> Option<String> {
-    list_rows(ui, width, current, items.len(), &|k| items.get(k).map(Row::Item), None, None, preview).0
+    list_rows(
+        ui,
+        RowListOptions {
+            width,
+            current,
+            n: items.len(),
+            row: &|k| items.get(k).map(Row::Item),
+            highlight: None,
+            scroll: None,
+            preview,
+            recent_rows: 0,
+        },
+    )
+    .0
 }
 
 /// A row of a combo's list: a dim section heading nothing picks, or an entry.
@@ -458,19 +594,87 @@ fn heading_row(ui: &mut Ui, text: &str, size: egui::Vec2, rule: bool) {
     });
 }
 
+/// The rows `range` of a combo's list, in `ui`'s scroll area. Returns the clicked item.
+struct RowDrawOptions<'rows, 'text> {
+    width: f32,
+    current: &'text str,
+    range: std::ops::Range<usize>,
+    row: &'rows dyn Fn(usize) -> Option<Row<'text>>,
+    highlight: Option<usize>,
+    preview: Option<&'rows dyn Fn(&mut Ui, &str) -> Response>,
+    row_height: f32,
+    /// How many recent families head the list (0 without the section).
+    recent_rows: usize,
+}
+
+fn draw_rows(ui: &mut Ui, options: RowDrawOptions<'_, '_>) -> Option<String> {
+    let RowDrawOptions { width, current, range, row, highlight, preview, row_height: row_h, recent_rows } = options;
+    let mut out = None;
+    let tokens = Tokens::get(ui.ctx());
+    let (fill, accent) = (tokens.checked, tokens.accent);
+    ui.set_min_width(width + 60.0);
+    // A family in Recently Used is marked there only: marked again under All Fonts it would look as
+    // if two were chosen.
+    let current_is_recent = (1..=recent_rows).any(|k| matches!(row(k), Some(Row::Item(r)) if r == current));
+    for k in range {
+        let it = match row(k) {
+            Some(Row::Item(it)) => it,
+            Some(Row::Heading(h)) => {
+                heading_row(ui, h, vec2(width + 60.0, row_h), k > 0);
+                continue;
+            }
+            None => continue,
+        };
+        let lit = highlight == Some(k);
+        let clicked = match preview {
+            Some(p) => {
+                if lit {
+                    let r = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), row_h));
+                    ui.painter().rect_filled(r, 3.0, fill);
+                }
+                let in_all_fonts = recent_rows > 0 && k > recent_rows.saturating_add(1);
+                if it == current && !(in_all_fonts && current_is_recent) {
+                    let r = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), row_h));
+                    ui.painter().rect_filled(r, 3.0, fill);
+                    ui.painter().rect_filled(Rect::from_min_size(r.min, vec2(3.0, row_h)), 1.5, accent);
+                }
+                let resp = p(ui, it);
+                if resp.hovered() {
+                    note_hover(ui.ctx(), it.clone());
+                }
+                resp.clicked()
+            }
+            None => {
+                let resp = ui.selectable_label(if highlight.is_some() { lit } else { it == current }, it.as_str());
+                if resp.hovered() {
+                    note_hover(ui.ctx(), it.clone());
+                }
+                resp.clicked()
+            }
+        };
+        if clicked {
+            out = Some(it.clone());
+        }
+    }
+    out
+}
+
 /// The rows of [`combo_list`], virtualised, for `n` rows fetched by index. With a `highlight`
 /// that row is marked instead of `current`; `scroll` (last frame's offset and visible height)
 /// scrolls the highlight into view. Returns the clicked item, the scroll offset and the height.
-fn list_rows<'a>(
-    ui: &mut Ui,
+struct RowListOptions<'rows, 'text> {
     width: f32,
-    current: &str,
+    current: &'text str,
     n: usize,
-    row: &dyn Fn(usize) -> Option<Row<'a>>,
+    row: &'rows dyn Fn(usize) -> Option<Row<'text>>,
     highlight: Option<usize>,
     scroll: Option<(f32, f32)>,
-    preview: Option<&dyn Fn(&mut Ui, &str) -> Response>,
-) -> (Option<String>, f32, f32) {
+    preview: Option<&'rows dyn Fn(&mut Ui, &str) -> Response>,
+    recent_rows: usize,
+}
+
+fn list_rows(ui: &mut Ui, options: RowListOptions<'_, '_>) -> (Option<String>, f32, f32) {
+    let RowListOptions { width, current, n, row, highlight, scroll, preview, recent_rows } = options;
     let mut out = None;
     let row_h = if preview.is_some() { COMBO_PREVIEW_ROW_H } else { ui.spacing().interact_size.y };
     let desired_h = (n as f32 * (row_h + ui.spacing().item_spacing.y)).min(420.0);
@@ -492,32 +696,9 @@ fn list_rows<'a>(
         };
         area = area.vertical_scroll_offset(offset.max(0.0));
     }
-    let fill = Tokens::get(ui.ctx()).checked;
     let shown = area.show_rows(ui, row_h, n, |ui, range| {
-        ui.set_min_width(width + 60.0);
-        for k in range {
-            let it = match row(k) {
-                Some(Row::Item(it)) => it,
-                Some(Row::Heading(h)) => {
-                    heading_row(ui, h, vec2(width + 60.0, row_h), k > 0);
-                    continue;
-                }
-                None => continue,
-            };
-            let lit = highlight == Some(k);
-            let clicked = match preview {
-                Some(p) => {
-                    if lit {
-                        let r = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), row_h));
-                        ui.painter().rect_filled(r, 3.0, fill);
-                    }
-                    p(ui, it).clicked()
-                }
-                None => ui.selectable_label(if highlight.is_some() { lit } else { it == current }, it.as_str()).clicked(),
-            };
-            if clicked {
-                out = Some(it.clone());
-            }
+        if let Some(v) = draw_rows(ui, RowDrawOptions { width, current, range, row, highlight, preview, row_height: row_h, recent_rows }) {
+            out = Some(v);
         }
     });
     (out, shown.state.clamped_offset().y, shown.inner_rect.height())
